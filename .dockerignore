@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.*
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+deploy/
+tests/
+Makefile
+*.md
