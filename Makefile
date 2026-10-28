@@ -25,7 +25,8 @@ up:
 		kubectl -n $(ENV) create secret generic release-notes-db \
 			--from-literal=POSTGRES_PASSWORD=$$(openssl rand -hex 16)
 	helm upgrade --install release-notes $(CHART) -n $(ENV) \
-		-f $(CHART)/values-$(ENV).yaml --set image.tag=$(TAG) --wait --timeout 180s
+		-f $(CHART)/values-$(ENV).yaml --set image.repository=$(IMAGE) --set image.tag=$(TAG) \
+		--wait --timeout 180s
 	@echo "Up. dev UI: http://localhost:8080  (other envs: kubectl -n $(ENV) port-forward svc/release-notes 8081:80)"
 
 down:

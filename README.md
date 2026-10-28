@@ -88,7 +88,35 @@ Then open http://127.0.0.1:8000 (API docs at `/docs`).
 
 ## Tests
 
-Tests are not in the repository yet. They come in a later step.
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests run the real app through FastAPI's `TestClient` against a temporary SQLite database,
+so no server or PostgreSQL is needed. They cover the API (create, list order, duplicate
+version, validation), the UI route, liveness and readiness (including a real database
+failure), metric labels, and request logging.
+
+To run the same suite against PostgreSQL, as CI does, point `TEST_DATABASE_URL` at a
+**throwaway** database (the tests delete all rows):
+
+```
+docker run -d --rm --name rn-test-pg -p 55432:5432 -e POSTGRES_USER=release \
+  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=releases postgres:16
+TEST_DATABASE_URL=postgresql+psycopg://release:test@localhost:55432/releases pytest
+docker stop rn-test-pg
+```
+
+## CI/CD
+
+GitHub Actions, `.github/workflows/ci.yml`:
+
+- **Every push and pull request:** `ruff` lint, tests on SQLite and PostgreSQL, `helm lint` and
+  `kubeconform` schema checks for dev and prod, and an image build tagged with the commit SHA.
+- **Push to `main`:** the image is pushed to `ghcr.io/<owner>/release-notes:<sha>`, and CI
+  commits that image into `deploy/values-prod.yaml`. A GitOps agent (Argo CD or Flux) watching
+  `main` deploys it; CI itself never connects to a cluster. See DECISIONS.md for why.
 
 ## Configuration
 
@@ -110,7 +138,10 @@ app/                 FastAPI service
   metrics.py         Prometheus metric definitions
   middleware.py      per-request metrics and logging
   static/index.html  the UI (single file, no build step)
+tests/               pytest suite (API, health, metrics, logging)
 deploy/              Helm chart (values.yaml, values-dev.yaml, values-prod.yaml, templates/)
+.github/workflows/   CI/CD pipeline
+requirements-dev.txt test and lint dependencies (kept out of the image)
 Dockerfile           production image (multi-stage, non-root)
 kind.yaml            local cluster definition
 Makefile             make up / down / clean

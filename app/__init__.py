@@ -5,12 +5,16 @@ from .metrics import LATENCY, REQUESTS
 from .middleware import observe_requests
 from .schemas import ReleaseIn, ReleaseOut
 
-
 __all__ = [
-    "settings",
-    "engine", "metadata", "releases",
-    "configure_logging", "log",
-    "LATENCY", "REQUESTS",
+    "LATENCY",
+    "REQUESTS",
+    "ReleaseIn",
+    "ReleaseOut",
+    "configure_logging",
+    "engine",
+    "log",
+    "metadata",
     "observe_requests",
-    "ReleaseIn", "ReleaseOut",
+    "releases",
+    "settings",
 ]

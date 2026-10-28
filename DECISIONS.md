@@ -68,10 +68,36 @@ explain every line.
   `kind.yaml` also raises kubeadm's timeouts, because the first control-plane start on a
   2-CPU VM took longer than kubeadm's 1-minute default.
 
+## Tests
+- **Tests drive the real app over HTTP** (FastAPI `TestClient`), including middleware, routing,
+  validation and a real SQL database, rather than unit-testing functions in isolation.
+- **The same suite runs twice in CI:** on SQLite (fast, no server) and on PostgreSQL 16 as a
+  service container, so the production driver, the unique constraint and timestamps are covered.
+  The test database comes from `TEST_DATABASE_URL`, never `DATABASE_URL`, because the fixture
+  deletes all rows and must not touch a real database from someone's shell.
+- **No separate tests against the deployed cluster:** the Part 4 rollout script sends real
+  traffic to the running stack and is that end-to-end check.
+
+## CI/CD (GitHub Actions, `.github/workflows/ci.yml`)
+- **Every push and pull request:** `ruff` lint; tests on SQLite and PostgreSQL; `helm lint` plus
+  `helm template | kubeconform -strict` for both environments; image build tagged with the commit
+  SHA. The image job runs only after the other three pass.
+- **Push to `main` only:** the image is pushed to GHCR, then CI commits the new repository and
+  tag into `deploy/values-prod.yaml`.
+- **GitOps over a direct deploy step.** CI never holds cluster credentials and never talks to a
+  cluster. A GitOps agent in the cluster (Argo CD or Flux) watches `main` and applies what it
+  says, so git is the record of what runs in prod, drift is corrected, and a rollback is a
+  `git revert` of the bump commit. The cost is a bot commit per release and a short delay until
+  the agent syncs. The agent itself is not part of this repo; the local cluster is deployed with
+  `make up`, which overrides the image with the locally built one.
+- **Known limits:** the bump commit needs `main` to accept pushes from `github-actions[bot]`
+  (with branch protection, a bot pull request instead). Actions are pinned to major versions;
+  in production I would pin them to commit SHAs.
+
 ## Cut for time
-Tests (next step), CI pipeline (Part 3), zero-downtime rollout script and graceful-shutdown
-tuning (Part 4), PodDisruptionBudget, NetworkPolicy, Ingress, database backups, Alembic
-migrations, a secret manager, authentication.
+Zero-downtime rollout script and graceful-shutdown tuning (Part 4), PodDisruptionBudget,
+NetworkPolicy, Ingress, database backups, Alembic migrations, a secret manager,
+authentication, image signing and vulnerability scanning.
 
 ## For a real rollout across many clusters
 - **Infrastructure with Terraform:** one cluster per environment and region, a managed

@@ -1,7 +1,7 @@
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger("release_notes")
 
@@ -11,7 +11,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record):
         entry = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "msg": record.getMessage(),
         }
