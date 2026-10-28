@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import ReleaseIn, ReleaseOut, engine, releases
 
-router = APIRouter(tags=["releases"])
+router = APIRouter(prefix="/api/releases", tags=["releases"])
 
 
 @router.get("", response_model=list[ReleaseOut])
