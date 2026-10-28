@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release Notes</title>
+<style>
+  body { margin: 0; background: #060a0f; color: #fff; font: 16px system-ui, sans-serif; }
+  header { padding: 8px 12px; border-bottom: 1px solid #2a2f38; font-weight: 700; font-size: 20px; }
+  main { max-width: 824px; margin: 18px auto; padding: 0 12px; }
+  section { border: 1px solid #2a2f38; border-radius: 8px; padding: 20px 18px; margin-bottom: 18px; }
+  h2 { margin: 0 0 16px; font-size: 17px; }
+  .row { display: flex; gap: 12px; }
+  .row > label:first-child { flex: 1; }
+  .row > label:last-child { flex: 2; }
+  label { display: block; margin-bottom: 14px; font-size: 14px; }
+  input, textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 9px 10px; background: #2d2b36;
+    color: #fff; border: 1px solid #3a3844; border-radius: 6px; font: inherit; }
+  textarea { height: 100px; }
+  button { padding: 10px 18px; background: #0b6bff; color: #fff; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+  #error { color: #ff4d4f; font-size: 14px; margin: 0 0 12px; }
+  .rel { padding: 10px 0; border-top: 1px solid #2a2f38; }
+  .rel:first-child { border-top: 0; }
+  .meta { color: #8b93a0; font-size: 13px; }
+  .notes { white-space: pre-wrap; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header>Release Notes</header>
+<main>
+  <section>
+    <h2>Record a release</h2>
+    <form id="form">
+      <div class="row">
+        <label>Version <input name="version" required maxlength="50"></label>
+        <label>Title <input name="title" required maxlength="200"></label>
+      </div>
+      <label>Author <input name="author" required maxlength="100"></label>
+      <label>Notes <textarea name="notes"></textarea></label>
+      <p id="error" hidden></p>
+      <button>Save release</button>
+    </form>
+  </section>
+  <section>
+    <h2>History</h2>
+    <div id="history"></div>
+  </section>
+</main>
+<script>
+  const form = document.getElementById("form");
+  const error = document.getElementById("error");
+  const history = document.getElementById("history");
+
+  // Relative URLs: UI and API share one origin (same pod/Service), so no CORS or per-env config.
+  async function api(method, body) {
+    const res = await fetch("/api/releases", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body && JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function load() {
+    try {
+      const releases = await api("GET");
+      history.replaceChildren(...releases.map(r => {
+        const el = document.createElement("div");
+        el.className = "rel";
+        const head = document.createElement("strong");
+        head.textContent = `${r.version} - ${r.title}`;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `${r.author} · ${new Date(r.created_at).toLocaleString()}`;
+        const notes = document.createElement("p");
+        notes.className = "notes";
+        notes.textContent = r.notes || "";
+        el.append(head, meta, notes);
+        return el;
+      }));
+      if (!releases.length) history.textContent = "No releases yet.";
+    } catch (e) {
+      history.textContent = `Could not load releases (${e.message}).`;
+    }
+  }
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    error.hidden = true;
+    try {
+      await api("POST", Object.fromEntries(new FormData(form)));
+      form.reset();
+      load();
+    } catch (err) {
+      error.textContent = `Request failed (${err.message}).`;
+      error.hidden = false;
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>
