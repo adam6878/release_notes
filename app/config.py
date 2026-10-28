@@ -8,5 +8,7 @@ class Settings(BaseSettings):
     # No default on purpose: a missing Secret must stop startup, not fall back to a throwaway DB.
     database_url: str
 
+    log_level: str = "INFO"
+
 
 settings = Settings()
