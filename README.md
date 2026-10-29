@@ -184,7 +184,6 @@ scripts/             load_test.py (failed requests under steady traffic)
 Makefile             make up / down / clean / rollout / rollback
 DECISIONS.md         trade-offs and what was cut
 CLAUDE.md            project rules for the AI coding assistant
-.claude/agents/      reviewer agent: checks a diff against CLAUDE.md before a commit
 .pre-commit-config.yaml  ruff, mypy, pytest and helm lint on every git commit
 ```
 

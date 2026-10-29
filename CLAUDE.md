@@ -31,7 +31,6 @@ make up | rollout TAG=vN | rollback | down | clean
 ## Workflow
 - Do not run lint, tests or the cluster after every edit. Verify when asked or before a commit.
 - Every commit runs ruff, mypy, pytest and helm lint as pre-commit hooks
-  (`.pre-commit-config.yaml`). Before a commit, the `reviewer` agent in `.claude/agents/`
-  checks the diff against these rules.
+  (`.pre-commit-config.yaml`).
 - The owner creates branches and commits (`feature/*` into `develop` into `main`).
   Finish with a one-line commit message.

@@ -2,9 +2,7 @@
 
 ## AI assistance
 I used Claude Code (an AI assistant) while building this. I reviewed every change and can
-explain every line. `CLAUDE.md` holds the project rules the assistant follows, and the
-`reviewer` agent in `.claude/agents/` checks a diff against those rules. Mechanical checks are
-pre-commit hooks, not an agent: they always give the same answer, so a script is faster and free.
+explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 
 ## Assumptions
 - "Internal tool" means no authentication; it would sit behind the company SSO or VPN.
