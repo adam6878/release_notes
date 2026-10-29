@@ -89,11 +89,36 @@ for 2 minutes and prints a report; it exits non-zero if any request failed. It k
 about Helm, so it can also run on its own: `python scripts/load_test.py`.
 
 ```
-requests: 768  failed: 0
-versions seen, in order: v1 v4
+v1: 412 succeeded
+v4: 356 succeeded
+sent: 768  succeeded: 768  failed: 0
 ```
 
 The UI footer shows the running version, so the change is also visible in the browser.
+
+### On Windows without a bash shell
+
+`make` needs bash (Git Bash). From PowerShell or cmd, run the same steps by hand. Start the
+load test first so traffic is already flowing when the pods change; its report prints about
+2 minutes later. In cmd, replace the first line with `start /b python scripts\load_test.py`.
+
+Rollout to `v2`:
+
+```powershell
+Start-Process python scripts/load_test.py -NoNewWindow
+docker build -t release-notes:v2 .
+kind load docker-image release-notes:v2 --name release-notes
+helm upgrade --install release-notes deploy -n dev -f deploy/values-dev.yaml --set image.repository=release-notes --set image.tag=v2 --wait --timeout 180s
+```
+
+Rollback (after the rollout's report has printed):
+
+```powershell
+Start-Process python scripts/load_test.py -NoNewWindow
+helm rollback release-notes -n dev --wait
+```
+
+Use a tag that is not deployed yet; redeploying the current tag replaces no pods.
 
 ## Run locally without Kubernetes
 
