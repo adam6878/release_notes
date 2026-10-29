@@ -1,0 +1,45 @@
+# Shared defaults. values-dev.yaml and values-prod.yaml override only what differs.
+
+image:
+  repository: release-notes
+  tag: ""                  # set at install time (make up passes the git SHA); never "latest"
+  pullPolicy: IfNotPresent # the image is loaded into the cluster, not pulled from a registry
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 80
+
+config:
+  logLevel: INFO
+
+# Secret holding POSTGRES_PASSWORD. Created outside Helm (make up), so no password lives in git or values.
+existingSecret: release-notes-db
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+postgres:
+  image: postgres:16
+  database: releases
+  user: release
+  storage: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

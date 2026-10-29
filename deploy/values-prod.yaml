@@ -1,0 +1,24 @@
+# Written by CI on every merge to main (GitOps): the cluster's GitOps agent deploys this.
+# make up overrides both fields with the locally built image.
+image:
+  repository: ghcr.io/adam6878/release-notes
+  tag: ""
+
+config:
+  logLevel: INFO
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 192Mi
+  limits:
+    cpu: "1"
+    memory: 384Mi
+
+postgres:
+  storage: 2Gi

@@ -1,0 +1,100 @@
+{{- $db := printf "%s-postgres" .Release.Name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "release-notes.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # an old pod leaves only after its replacement is Ready
+  minReadySeconds: 5      # a new pod must stay Ready this long before the rollout moves on
+  selector:
+    matchLabels:
+      {{- include "release-notes.labels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "release-notes.labels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+      annotations:
+        # A config change alters this hash, so the pods roll to pick it up.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      # Covers the preStop sleep plus uvicorn's 20 s drain, with headroom before SIGKILL.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Wait for Postgres so the app does not crash-loop while the database starts.
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image }}
+          command:
+            - sh
+            - -c
+            # -U is required: the pod's UID has no user entry in this image, so libpq has no default user name.
+            - until pg_isready -h {{ $db }} -p 5432 -U {{ .Values.postgres.user }} -d {{ .Values.postgres.database }}; do echo waiting for postgres; sleep 2; done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ required "image.tag is required (make up sets it)" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}
+          env:
+            # Order matters: DATABASE_URL expands $(POSTGRES_PASSWORD), so the password is defined first.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ $db }}:5432/{{ .Values.postgres.database }}?connect_timeout=5
+            - name: APP_VERSION
+              value: {{ .Values.image.tag | quote }}
+          lifecycle:
+            preStop:
+              # Removing a terminating pod from the Service takes a moment to reach every node.
+              # Keep serving during that window; SIGTERM (graceful uvicorn drain) comes after.
+              exec:
+                command: [sleep, "5"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

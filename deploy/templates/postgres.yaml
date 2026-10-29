@@ -1,0 +1,89 @@
+{{- $db := printf "%s-postgres" .Release.Name }}
+# Headless Service: gives the StatefulSet's single pod a stable DNS name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $db }}
+  labels:
+    {{- include "release-notes.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "release-notes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+# ponytail: one replica, no backups or failover; use a managed database or an operator in production
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $db }}
+  labels:
+    {{- include "release-notes.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $db }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "release-notes.labels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "release-notes.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999 # makes the mounted volume writable by the postgres user
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.user }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: POSTGRES_PASSWORD
+            # Subdirectory: a freshly mounted volume root can contain lost+found, which initdb rejects.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, {{ .Values.postgres.user }}, -d, {{ .Values.postgres.database }}]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, {{ .Values.postgres.user }}, -d, {{ .Values.postgres.database }}]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}

@@ -1,0 +1,16 @@
+# Local cluster: one node. Host port 8080 reaches the dev Service's fixed NodePort 30080.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+    # kubeadm waits 1 minute for the API server by default. On a small laptop VM (2 CPUs)
+    # the first start takes longer, so kubeadm gives up on a control plane that is still coming up.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        timeouts:
+          kubernetesAPICall: 5m0s
+          controlPlaneComponentHealthCheck: 5m0s

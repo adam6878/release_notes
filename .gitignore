@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+
+# Node / JS
+node_modules/
+dist/
+npm-debug.log*
+
+# Docker / Kubernetes
+docker-compose.override.yml
+*-secret.yaml
+*-secrets.yaml
+
+# Prometheus local data
+prometheus_data/
+
+# Logs
+*.log
+logs/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/settings.local.json

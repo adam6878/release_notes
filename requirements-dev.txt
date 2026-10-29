@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest==9.2.0
+requests==2.34.2
+types-requests==2.33.0.20261006
+httpx2==2.16.0
+mypy==2.4.1
+ruff==0.17.3
+pre-commit==4.7.0
