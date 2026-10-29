@@ -12,7 +12,7 @@ configure_logging(settings.log_level)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # ponytail: create_all can race when replicas start together; use Alembic + a migration Job in prod
     metadata.create_all(engine)
     log.info("startup complete")

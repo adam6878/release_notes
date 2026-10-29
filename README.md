@@ -46,7 +46,7 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
   kernelCommandLine = cgroup_no_v1=all
   ```
   Current Kubernetes versions do not start on cgroup v1.
-- `kind`, `kubectl`, `helm`, `make`, `python`. The Makefile is written for Windows: its recipes
+- `kind`, `kubectl`, `helm`, `make`, Python 3.15. The Makefile is written for Windows: its recipes
   run in `cmd.exe`, so `make` works from cmd, PowerShell and Git Bash.
 
 ## Bring the stack up
@@ -114,6 +114,7 @@ Then open http://127.0.0.1:8000 (API docs at `/docs`).
 ## Tests
 
 ```
+set PYYAML_FORCE_LIBYAML=0       # Windows: PyYAML (pre-commit) has no 3.15 wheel yet; build it pure-Python
 pip install -r requirements-dev.txt
 pytest
 ruff check .

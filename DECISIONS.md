@@ -46,7 +46,7 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **JSON logs to stdout**, one line per request; probes and scrapes are counted, not logged.
 
 ## Container and Kubernetes
-- **Image:** multi-stage build on `python:3.11-slim`, numeric non-root user. The build stage
+- **Image:** multi-stage build on `python:3.15-slim`, numeric non-root user. The build stage
   keeps the pip cache and build leftovers out of the final image. `.dockerignore` keeps `.env`
   and git history out.
 - **`ENTRYPOINT ["python", "run.py"]`.** `run.py` calls `uvicorn.run` with host, port and
