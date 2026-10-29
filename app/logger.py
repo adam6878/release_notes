@@ -9,8 +9,8 @@ log = logging.getLogger("release_notes")
 class JsonFormatter(logging.Formatter):
     """One JSON object per line, so a log collector can parse fields without regex."""
 
-    def format(self, record):
-        entry = {
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, object] = {
             "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "msg": record.getMessage(),

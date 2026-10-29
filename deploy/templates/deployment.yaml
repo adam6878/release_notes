@@ -13,7 +13,8 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0
+      maxUnavailable: 0   # an old pod leaves only after its replacement is Ready
+  minReadySeconds: 5      # a new pod must stay Ready this long before the rollout moves on
   selector:
     matchLabels:
       {{- include "release-notes.labels" . | nindent 6 }}
@@ -30,6 +31,8 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: /metrics
     spec:
+      # Covers the preStop sleep plus uvicorn's 20 s drain, with headroom before SIGKILL.
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -68,6 +71,14 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DATABASE_URL
               value: postgresql+psycopg://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ $db }}:5432/{{ .Values.postgres.database }}?connect_timeout=5
+            - name: APP_VERSION
+              value: {{ .Values.image.tag | quote }}
+          lifecycle:
+            preStop:
+              # Removing a terminating pod from the Service takes a moment to reach every node.
+              # Keep serving during that window; SIGTERM (graceful uvicorn drain) comes after.
+              exec:
+                command: [sleep, "5"]
           livenessProbe:
             httpGet:
               path: /healthz

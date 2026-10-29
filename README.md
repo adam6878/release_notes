@@ -46,8 +46,8 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
   kernelCommandLine = cgroup_no_v1=all
   ```
   Current Kubernetes versions do not start on cgroup v1.
-- `kind`, `kubectl`, `helm`, `make`, `openssl`
-- `bash` on the PATH (on Windows: Git Bash). The Makefile runs its recipes with bash.
+- `kind`, `kubectl`, `helm`, `make`, `python`. The Makefile is written for Windows: its recipes
+  run in `cmd.exe`, so `make` works from cmd, PowerShell and Git Bash.
 
 ## Bring the stack up
 
@@ -74,6 +74,31 @@ Other commands:
 
 The first `make up` takes several minutes (node image pull and control-plane start).
 
+## Zero-downtime rollout
+
+With the dev stack up:
+
+```
+make rollout TAG=v2   # build v2 and roll it out while traffic runs
+make rollback         # back to the previous Helm revision, measured the same way
+```
+
+Both change the pods in the background while `scripts/load_test.py` runs in the foreground. The
+load test (needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every
+~100 ms for 2 minutes and prints a report. It knows nothing
+about Helm, so it can also run on its own: `python scripts/load_test.py`.
+
+```
+8fd5737: 767 succeeded
+v3: 428 succeeded
+sent: 1195  succeeded: 1195  failed: 0
+```
+
+The UI footer shows the running version, so the change is also visible in the browser.
+
+Each command takes about 2 minutes, the length of the load test. Use a tag that is not
+deployed yet; redeploying the current tag replaces no pods.
+
 ## Run locally without Kubernetes
 
 ```
@@ -81,7 +106,7 @@ python -m venv venv
 venv\Scripts\activate            # Windows; on Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env             # SQLite by default
-uvicorn app.main:app --reload --no-access-log
+python run.py
 ```
 
 Then open http://127.0.0.1:8000 (API docs at `/docs`).
@@ -91,6 +116,8 @@ Then open http://127.0.0.1:8000 (API docs at `/docs`).
 ```
 pip install -r requirements-dev.txt
 pytest
+ruff check .
+mypy                             # strict type check; settings in mypy.ini
 ```
 
 Tests run the real app through FastAPI's `TestClient` against a temporary SQLite database,
@@ -110,13 +137,14 @@ docker stop rn-test-pg
 
 ## CI/CD
 
-GitHub Actions, `.github/workflows/ci.yml`:
+GitHub Actions, two workflows in `.github/workflows/`:
 
-- **Every push and pull request:** `ruff` lint, tests on SQLite and PostgreSQL, `helm lint` and
-  `kubeconform` schema checks for dev and prod, and an image build tagged with the commit SHA.
-- **Push to `main`:** the image is pushed to `ghcr.io/<owner>/release-notes:<sha>`, and CI
-  commits that image into `deploy/values-prod.yaml`. A GitOps agent (Argo CD or Flux) watching
-  `main` deploys it; CI itself never connects to a cluster. See DECISIONS.md for why.
+- **`ci.yml`, every push and pull request:** `ruff` lint, tests on SQLite and PostgreSQL,
+  `helm lint` and `kubeconform` schema checks for dev and prod, and an image build (not pushed).
+- **`cd.yml`, after `ci` succeeds on `main`:** the image is pushed to
+  `ghcr.io/<owner>/release-notes:<sha>`, and CD commits that image into
+  `deploy/values-prod.yaml`. A GitOps agent (Argo CD or Flux) watching `main` deploys it; CD
+  itself never connects to a cluster. See DECISIONS.md for why.
 
 ## Configuration
 
@@ -124,13 +152,18 @@ GitHub Actions, `.github/workflows/ci.yml`:
 |---|---|---|---|
 | `DATABASE_URL` | yes | none | SQLAlchemy URL. The app refuses to start without it. |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` in dev, `INFO` in prod. |
+| `APP_VERSION` | no | `dev` | Set by the chart to the image tag; shown in the UI and at `/api/version`. |
+| `HOST` | no | `0.0.0.0` | Address the server binds to. `.env.example` sets `127.0.0.1` for local runs. |
+| `PORT` | no | `8000` | The chart's probes and Service expect 8000. |
+| `GRACEFUL_SHUTDOWN_SECONDS` | no | `20` | Time to finish in-flight requests on SIGTERM; must stay below the pod's grace period minus the `preStop` sleep. |
+| `RELOAD` | no | `false` | Restart on code changes. `.env.example` turns it on for local runs. |
 
 ## Repository layout
 
 ```
 app/                 FastAPI service
-  main.py            entrypoint: builds the app, wires routers and middleware
-  routers/           releases, health, metrics endpoints
+  main.py            builds the app, wires routers and middleware
+  routers/           releases, version, health, metrics endpoints
   config.py          settings from environment variables
   db.py              table definition and engine
   schemas.py         request and response models
@@ -141,10 +174,13 @@ app/                 FastAPI service
 tests/               pytest suite (API, health, metrics, logging)
 deploy/              Helm chart (values.yaml, values-dev.yaml, values-prod.yaml, templates/)
 .github/workflows/   CI/CD pipeline
-requirements-dev.txt test and lint dependencies (kept out of the image)
+requirements-dev.txt test, lint and type-check dependencies (kept out of the image)
+mypy.ini             strict type-check settings
+run.py               entrypoint: starts uvicorn with settings from config.py
 Dockerfile           production image (multi-stage, non-root)
 kind.yaml            local cluster definition
-Makefile             make up / down / clean
+scripts/             load_test.py (failed requests under steady traffic)
+Makefile             make up / down / clean / rollout / rollback
 DECISIONS.md         trade-offs and what was cut
 ```
 
