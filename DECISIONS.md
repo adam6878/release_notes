@@ -129,6 +129,11 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
     destination: {server: https://kubernetes.default.svc, namespace: prod}
     syncPolicy: {automated: {prune: true, selfHeal: true}}
   ```
+- **Exact pins, updated by Dependabot** (`.github/dependabot.yml`). `==` pins make the laptop,
+  CI and the image install the same code. Every week Dependabot opens PRs against `develop` for
+  pip packages (one grouped PR) and GitHub Actions, and CI tests each one before merge. The
+  Python base image is bumped by hand, because the Dockerfile, `ci.yml` and `mypy.ini` change
+  together. Only top-level packages are pinned; their dependencies still float.
 - **Known limits:** the bump commit needs `main` to accept pushes from `github-actions[bot]`
   (with branch protection, a bot pull request instead). Actions are pinned to major versions;
   in production I would pin them to commit SHAs.

@@ -176,6 +176,7 @@ app/                 FastAPI service
 tests/               pytest suite (API, health, metrics, logging)
 deploy/              Helm chart (values.yaml, values-dev.yaml, values-prod.yaml, templates/)
 .github/workflows/   CI/CD pipeline
+.github/dependabot.yml  weekly PRs that bump pinned versions
 requirements-dev.txt test, lint and type-check dependencies (kept out of the image)
 mypy.ini             strict type-check settings
 run.py               entrypoint: starts uvicorn with settings from config.py
