@@ -3,19 +3,25 @@ SHELL := cmd.exe
 # Override on the command line, e.g. make up ENV=prod, make rollout TAG=v2.
 ENV    ?= dev
 TAG    ?= $(shell git rev-parse --short HEAD)
+# host:port of the env's NodePort on this machine (kind.yaml); the load test sends traffic there.
+ifeq ($(ENV),prod)
+TARGET ?= 127.0.0.1:8081
+else
+TARGET ?= 127.0.0.1:8080
+endif
 
 CLUSTER := release-notes
 RELEASE := release-notes
 IMAGE   := release-notes
 CHART   := deploy
 METRICS_SERVER := https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
-LOAD_TEST := python scripts/load_test.py
+LOAD_TEST := python scripts/load_test.py $(TARGET)
 
 .PHONY: up cluster metrics-server image secret deploy rollout rollback down clean
 
 # Clean machine to running stack. Every step is safe to re-run.
 up: cluster metrics-server image secret deploy
-	@echo Up. dev UI: http://localhost:8080  (other envs: kubectl -n $(ENV) port-forward svc/$(RELEASE) 8081:80)
+	@echo Up. $(ENV) UI: http://$(TARGET)
 
 # export kubeconfig writes the cluster into ~/.kube/config and makes it current, even if another tool overwrote it.
 cluster:

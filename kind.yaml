@@ -1,4 +1,5 @@
-# Local cluster: one node. Host port 8080 reaches the dev Service's fixed NodePort 30080.
+# Local cluster: one node. Host ports 8080 and 8081 reach the fixed NodePorts of the dev (30080)
+# and prod (30081) Services. Port mappings are fixed at creation: change them with make clean && make up.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -6,6 +7,8 @@ nodes:
     extraPortMappings:
       - containerPort: 30080
         hostPort: 8080
+      - containerPort: 30081
+        hostPort: 8081
     # kubeadm waits 1 minute for the API server by default. On a small laptop VM (2 CPUs)
     # the first start takes longer, so kubeadm gives up on a control plane that is still coming up.
     kubeadmConfigPatches:

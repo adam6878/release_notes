@@ -48,7 +48,9 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 ## Container and Kubernetes
 - **Image:** multi-stage build on `python:3.15-slim`, numeric non-root user. The build stage
   keeps the pip cache and build leftovers out of the final image. `.dockerignore` keeps `.env`
-  and git history out.
+  and git history out. pip is removed from the final image: the app never runs it, and its
+  bundled urllib3, msgpack and setuptools were the only fixable HIGH CVEs. The rest are Debian
+  packages with no fix released yet; the floating `3.15-slim` tag picks fixes up on the next build.
 - **`ENTRYPOINT ["python", "run.py"]`.** `run.py` calls `uvicorn.run` with host, port and
   shutdown timeout from the same pydantic settings as the rest of the app, so every setting
   is an environment variable and the Dockerfile holds no server flags. Exec form makes python
@@ -152,7 +154,10 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   and shown in the UI footer.
 - **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
   counts every non-200 or failed connection. Result on kind: rollout 8fd5737 to v3, 1195
-  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed.
+  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed. The target is a
+  `host:port` argument. Dev and prod each get a fixed NodePort mapped to a host port by
+  `kind.yaml`, so traffic goes through the Service: a `kubectl port-forward` tunnel is pinned to
+  one pod and breaks when that pod is replaced.
 - **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in
   production, the way back is a `git revert` of the image bump.
 

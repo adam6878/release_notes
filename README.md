@@ -7,8 +7,8 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
 ## Architecture
 
 ```
-            localhost:8080
-                  │  (kind port mapping → NodePort 30080, dev only)
+   localhost:8080 (dev), localhost:8081 (prod)
+                  │  (kind port mapping → NodePort 30080 / 30081)
                   ▼
         ┌──────────────────┐        ┌───────────────────────────┐
         │ Service          │        │ Deployment: release-notes │
@@ -68,7 +68,7 @@ Other commands:
 
 | Command | What it does |
 |---|---|
-| `make up ENV=prod` | Installs the prod settings into namespace `prod` (HPA on, ClusterIP service). Reach it with `kubectl -n prod port-forward svc/release-notes 8081:80`. |
+| `make up ENV=prod` | Installs the prod settings into namespace `prod` (HPA on). Open **http://localhost:8081**. |
 | `make down` | Uninstalls the release and deletes the namespace **and its database volume**. |
 | `make clean` | Deletes the whole kind cluster. |
 
@@ -86,7 +86,9 @@ make rollback         # back to the previous Helm revision, measured the same wa
 Both change the pods in the background while `scripts/load_test.py` runs in the foreground. The
 load test (needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every
 ~100 ms for 2 minutes and prints a report. It knows nothing
-about Helm, so it can also run on its own: `python scripts/load_test.py`.
+about Helm, so it can also run on its own: `python scripts/load_test.py [host:port]` (default
+`127.0.0.1:8080`, the dev cluster). `make rollout ENV=prod` targets prod at `127.0.0.1:8081`;
+`TARGET=host:port` overrides the address.
 
 ```
 8fd5737: 767 succeeded
@@ -195,4 +197,4 @@ CLAUDE.md            project rules for the AI coding assistant
   (`docker info --format '{{.CgroupVersion}}'` must print `2`), then `make clean && make up`.
 - **Slow first start:** `kind.yaml` already gives kubeadm 5 minutes. Giving Docker more CPUs
   (`processors=` in `.wslconfig`) shortens it.
-- **Port 8080 already in use:** change `hostPort` in `kind.yaml`, then `make clean && make up`.
+- **Port 8080 or 8081 already in use:** change `hostPort` in `kind.yaml`, then `make clean && make up`.

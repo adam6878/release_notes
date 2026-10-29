@@ -12,6 +12,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Numeric UID so Kubernetes can verify runAsNonRoot.
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+# The app never runs pip; removing it drops the CVEs in its bundled urllib3, msgpack and setuptools.
+RUN pip uninstall --yes --root-user-action=ignore pip
 
 WORKDIR /srv
 COPY --from=builder /install /usr/local
