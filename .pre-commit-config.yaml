@@ -1,0 +1,35 @@
+# Runs on every git commit after `pre-commit install`: the same checks as CI's lint, test and chart jobs.
+# language: system uses the tools from requirements-dev.txt (activate venv first),
+# so every version is pinned in one place.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff check
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: pytest
+        name: pytest
+        entry: pytest -q
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: helm-lint-dev
+        name: helm lint dev
+        entry: helm lint deploy -f deploy/values-dev.yaml --set image.tag=ci
+        language: system
+        files: ^deploy/
+        pass_filenames: false
+      - id: helm-lint-prod
+        name: helm lint prod
+        entry: helm lint deploy -f deploy/values-prod.yaml --set image.tag=ci
+        language: system
+        files: ^deploy/
+        pass_filenames: false

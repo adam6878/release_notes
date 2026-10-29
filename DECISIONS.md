@@ -2,7 +2,7 @@
 
 ## AI assistance
 I used Claude Code (an AI assistant) while building this. I reviewed every change and can
-explain every line.
+explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 
 ## Assumptions
 - "Internal tool" means no authentication; it would sit behind the company SSO or VPN.
@@ -84,6 +84,10 @@ explain every line.
 - **Strict typing with mypy** (`mypy.ini`, `strict = True`, pydantic plugin): every parameter
   and return value is annotated, and CI fails on a missing or wrong annotation. mypy over
   pyright: it is the standard checker, needs no Node.js, and understands pydantic models.
+- **pre-commit hooks** run ruff, mypy, pytest and helm lint on every commit. They use the tools
+  installed from `requirements-dev.txt` (`language: system`), so versions are pinned in one
+  place. CI still runs the same checks, because hooks run only where installed and
+  `--no-verify` skips them.
 - **Tests drive the real app over HTTP** (FastAPI `TestClient`), including middleware, routing,
   validation and a real SQL database, rather than unit-testing functions in isolation.
 - **The same suite runs twice in CI:** on SQLite (fast, no server) and on PostgreSQL 16 as a
