@@ -40,14 +40,14 @@ def test_notes_are_optional(client):
     assert res.json()["notes"] == ""
 
 
-@pytest.mark.parametrize("bad", [
+@pytest.mark.parametrize("invalid_input", [
     {"version": ""},
     {"version": "x" * 51},
     {"title": ""},
     {"author": "a" * 101},
 ])
-def test_invalid_input_is_rejected_and_not_stored(client, bad):
-    res = client.post("/api/releases", json=release(**bad))
+def test_invalid_input_is_rejected_and_not_stored(client, invalid_input):
+    res = client.post("/api/releases", json=release(**invalid_input))
 
     assert res.status_code == 422
     assert client.get("/api/releases").json() == []
@@ -58,3 +58,7 @@ def test_missing_field_is_rejected(client):
     del payload["title"]
 
     assert client.post("/api/releases", json=payload).status_code == 422
+
+
+def test_version_is_reported(client):
+    assert client.get("/api/version").json() == {"version": "dev"}

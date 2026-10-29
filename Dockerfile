@@ -16,9 +16,12 @@ RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /srv
 COPY --from=builder /install /usr/local
 COPY app ./app
+COPY run.py .
 
 USER 10001
 EXPOSE 8000
 
-# Exec form: SIGTERM goes straight to uvicorn, which finishes in-flight requests before exiting.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# Exec form: python is PID 1, so SIGTERM goes straight to uvicorn, which finishes in-flight
+# requests before exiting.
+# ENTRYPOINT, not CMD: arguments passed to `docker run` or a pod's `args` cannot replace it.
+ENTRYPOINT ["python", "run.py"]
