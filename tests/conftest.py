@@ -14,7 +14,6 @@ from app.main import app
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    # The context manager runs the app's startup (table creation), like uvicorn does.
     with TestClient(app) as c:
         yield c
     with engine.begin() as conn:
