@@ -83,22 +83,21 @@ make rollout TAG=v2   # build v2 and roll it out while traffic runs
 make rollback         # back to the previous Helm revision, measured the same way
 ```
 
-Both run `scripts/load_test.py` in the background while Helm changes the pods. The load test
-(needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every ~100 ms
-for 2 minutes and prints a report; it exits non-zero if any request failed. It knows nothing
+Both change the pods in the background while `scripts/load_test.py` runs in the foreground. The
+load test (needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every
+~100 ms for 2 minutes and prints a report. It knows nothing
 about Helm, so it can also run on its own: `python scripts/load_test.py`.
 
 ```
-v1: 412 succeeded
-v4: 356 succeeded
-sent: 768  succeeded: 768  failed: 0
+8fd5737: 767 succeeded
+v3: 428 succeeded
+sent: 1195  succeeded: 1195  failed: 0
 ```
 
 The UI footer shows the running version, so the change is also visible in the browser.
 
-`make` does not wait for the load test: its report prints about 2 minutes after the command
-starts, so wait for it before the next one. Use a tag that is not deployed yet; redeploying the
-current tag replaces no pods.
+Each command takes about 2 minutes, the length of the load test. Use a tag that is not
+deployed yet; redeploying the current tag replaces no pods.
 
 ## Run locally without Kubernetes
 

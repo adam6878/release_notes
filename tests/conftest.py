@@ -2,8 +2,8 @@ import os
 import tempfile
 from collections.abc import Iterator
 
-DEFUALT_TEST_DATABASE_URL = f"sqlite:///{tempfile.mkdtemp()}/test.db"
-os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or DEFUALT_TEST_DATABASE_URL
+DEFAULT_TEST_DATABASE_URL = f"sqlite:///{tempfile.mkdtemp()}/test.db"
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or DEFAULT_TEST_DATABASE_URL
 
 import pytest
 from fastapi.testclient import TestClient

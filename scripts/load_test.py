@@ -35,7 +35,7 @@ def send_traffic() -> list[str | None]:
         return [future.result() for future in futures]
 
 
-def main():
+def main() -> None:
     results = send_traffic()
     failed = results.count(None)
     # Counter keeps the order versions were first seen, so the old version prints first.

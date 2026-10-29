@@ -40,19 +40,19 @@ secret:
 deploy:
 	helm upgrade --install $(RELEASE) $(CHART) -n $(ENV) -f $(CHART)/values-$(ENV).yaml --set image.repository=$(IMAGE) --set image.tag=$(TAG) --wait --timeout 180s
 
-# rollout and rollback start the load test in the background (start /b), then change the pods.
-# make does not wait for the load test: its report prints about 2 minutes after it started.
+# rollout and rollback change the pods in the background (start /b) and run the load test in the
+# foreground, so make waits for its report and the prompt comes back right after it.
 # start is a cmd built-in that make cannot run directly, hence cmd /c.
 
 # Zero-downtime check: build and roll out TAG under steady traffic; expect 0 failed.
 rollout:
-	cmd /c start /b $(LOAD_TEST)
-	$(MAKE) image deploy TAG=$(TAG)
+	cmd /c start /b $(MAKE) image deploy TAG=$(TAG)
+	$(LOAD_TEST)
 
 # One-command way back to the previous Helm revision, measured the same way.
 rollback:
-	cmd /c start /b $(LOAD_TEST)
-	helm rollback $(RELEASE) -n $(ENV) --wait
+	cmd /c start /b helm rollback $(RELEASE) -n $(ENV) --wait
+	$(LOAD_TEST)
 
 down:
 	helm uninstall $(RELEASE) -n $(ENV)

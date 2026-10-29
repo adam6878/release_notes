@@ -25,7 +25,9 @@ explain every line.
   for nothing. I would move to the ORM when a related table appears.
 - **PostgreSQL in the cluster, SQLite locally**, chosen by `DATABASE_URL`.
 - **Tables are created on startup** (`create_all`). This is a shortcut: replicas starting
-  together can race. In production I would run Alembic migrations as a Job before the rollout.
+  together can race. Seen once on the first prod install: both pods created the tables on the
+  empty database at the same time, one failed and Kubernetes restarted it, and it came up on
+  the second try. In production I would run Alembic migrations as a Job before the rollout.
 - **Config from environment variables** (pydantic-settings). `DATABASE_URL` has no default,
   so a missing Secret stops startup instead of silently writing to a throwaway SQLite file.
 - **Minimal UI:** one static HTML file, no build step, served by the API container. It
@@ -69,7 +71,7 @@ explain every line.
   filesystem, all capabilities dropped, `RollingUpdate` with `maxUnavailable: 0`. An init
   container waits for PostgreSQL so the app does not crash-loop during a cold start.
 - **Scaling:** fixed 2 replicas in dev; an HPA on CPU (2 to 4 pods) in prod. metrics-server
-  is installed by `make up`.
+  is installed by `make up`; checked with `make up ENV=prod`, where the HPA reads `cpu: 1%/70%`.
 - **PostgreSQL** runs as a single-replica StatefulSet with a PersistentVolume, written in the
   chart rather than pulled in as a third-party subchart.
 - **kind** as the local cluster: it runs in Docker and loads local images without a registry.
@@ -134,13 +136,14 @@ explain every line.
 - **Graceful shutdown:** when a pod is deleted, removing it from the Service and sending it
   SIGTERM happen in parallel, and the routing change takes a moment to reach every node. A
   `preStop` sleep of 5 s keeps the pod serving through that window; then uvicorn gets SIGTERM
-  and finishes in-flight requests (`--timeout-graceful-shutdown 20`), inside a 30 s
-  `terminationGracePeriodSeconds`.
+  and finishes in-flight requests (`GRACEFUL_SHUTDOWN_SECONDS`, 20 s), inside a 30 s
+  `terminationGracePeriodSeconds`. Measured on kind: with the `preStop` hook removed, a restart
+  under load failed 2 of 1196 requests; with it, every run failed 0.
 - **Visible change:** the image tag is passed in as `APP_VERSION`, served at `/api/version`
   and shown in the UI footer.
 - **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
-  counts every non-200 or failed connection. Result on kind: rollout v1 to v4, 768 requests,
-  0 failed; rollback v4 to v1, 405 requests, 0 failed.
+  counts every non-200 or failed connection. Result on kind: rollout 8fd5737 to v3, 1195
+  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed.
 - **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in
   production, the way back is a `git revert` of the image bump.
 
