@@ -1,7 +1,6 @@
 import os
 import tempfile
 
-
 DEFUALT_TEST_DATABASE_URL = f"sqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or DEFUALT_TEST_DATABASE_URL
 
