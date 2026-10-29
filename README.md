@@ -83,8 +83,10 @@ make rollout TAG=v2   # build v2 and roll it out while traffic runs
 make rollback         # back to the previous Helm revision, measured the same way
 ```
 
-`scripts/rollout_check.py` sends a request to `/api/version` every ~100 ms for the whole
-change and prints the result; it exits non-zero if any request failed:
+Both run `scripts/load_test.py` in the background while Helm changes the pods. The load test
+(needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every ~100 ms
+for 2 minutes and prints a report; it exits non-zero if any request failed. It knows nothing
+about Helm, so it can also run on its own: `python scripts/load_test.py`.
 
 ```
 requests: 768  failed: 0
@@ -110,6 +112,8 @@ Then open http://127.0.0.1:8000 (API docs at `/docs`).
 ```
 pip install -r requirements-dev.txt
 pytest
+ruff check .
+mypy                             # strict type check; settings in mypy.ini
 ```
 
 Tests run the real app through FastAPI's `TestClient` against a temporary SQLite database,
@@ -166,11 +170,12 @@ app/                 FastAPI service
 tests/               pytest suite (API, health, metrics, logging)
 deploy/              Helm chart (values.yaml, values-dev.yaml, values-prod.yaml, templates/)
 .github/workflows/   CI/CD pipeline
-requirements-dev.txt test and lint dependencies (kept out of the image)
+requirements-dev.txt test, lint and type-check dependencies (kept out of the image)
+mypy.ini             strict type-check settings
 run.py               entrypoint: starts uvicorn with settings from config.py
 Dockerfile           production image (multi-stage, non-root)
 kind.yaml            local cluster definition
-scripts/             rollout_check.py (failed requests during a rollout)
+scripts/             load_test.py (failed requests under steady traffic)
 Makefile             make up / down / clean / rollout / rollback
 DECISIONS.md         trade-offs and what was cut
 ```

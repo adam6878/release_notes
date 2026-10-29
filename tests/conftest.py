@@ -1,5 +1,6 @@
 import os
 import tempfile
+from collections.abc import Iterator
 
 DEFUALT_TEST_DATABASE_URL = f"sqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or DEFUALT_TEST_DATABASE_URL
@@ -12,7 +13,7 @@ from app.main import app
 
 
 @pytest.fixture
-def client():
+def client() -> Iterator[TestClient]:
     # The context manager runs the app's startup (table creation), like uvicorn does.
     with TestClient(app) as c:
         yield c
@@ -20,5 +21,5 @@ def client():
         conn.execute(releases.delete())
 
 
-def release(version="1.0.0", **overrides):
+def release(version: str = "1.0.0", **overrides: str) -> dict[str, str]:
     return {"version": version, "title": "A release", "author": "adam", "notes": "Fixed things", **overrides}

@@ -3,15 +3,13 @@ SHELL := bash
 # Override on the command line, e.g. make up ENV=prod, make rollout TAG=v2.
 ENV    ?= dev
 TAG    ?= $(shell git rev-parse --short HEAD)
-PYTHON ?= python
 
 CLUSTER := release-notes
 RELEASE := release-notes
 IMAGE   := release-notes
 CHART   := deploy
 METRICS_SERVER := https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
-# 127.0.0.1, not localhost: on Windows localhost tries IPv6 first and each request waits ~2 s.
-CHECK := $(PYTHON) scripts/rollout_check.py http://127.0.0.1:8080/api/version
+LOAD_TEST := python scripts/load_test.py
 
 .PHONY: up cluster metrics-server image secret deploy rollout rollback down clean
 
@@ -44,13 +42,16 @@ deploy:
 	helm upgrade --install $(RELEASE) $(CHART) -n $(ENV) -f $(CHART)/values-$(ENV).yaml \
 		--set image.repository=$(IMAGE) --set image.tag=$(TAG) --wait --timeout 180s
 
+# rollout and rollback start the load test in the background (&), change the pods, then wait
+# for the load test's report; its exit code is the result. If the change fails, make stops at once.
+
 # Zero-downtime check: build and roll out TAG under steady traffic; expect 0 failed.
 rollout:
-	$(CHECK) $(MAKE) image deploy TAG=$(TAG)
+	$(LOAD_TEST) & $(MAKE) image deploy TAG=$(TAG) && wait $$!
 
 # One-command way back to the previous Helm revision, measured the same way.
 rollback:
-	$(CHECK) helm rollback $(RELEASE) -n $(ENV) --wait
+	$(LOAD_TEST) & helm rollback $(RELEASE) -n $(ENV) --wait && wait $$!
 
 down:
 	helm uninstall $(RELEASE) -n $(ENV)

@@ -79,6 +79,9 @@ explain every line.
   2-CPU VM took longer than kubeadm's 1-minute default.
 
 ## Tests
+- **Strict typing with mypy** (`mypy.ini`, `strict = True`, pydantic plugin): every parameter
+  and return value is annotated, and CI fails on a missing or wrong annotation. mypy over
+  pyright: it is the standard checker, needs no Node.js, and understands pydantic models.
 - **Tests drive the real app over HTTP** (FastAPI `TestClient`), including middleware, routing,
   validation and a real SQL database, rather than unit-testing functions in isolation.
 - **The same suite runs twice in CI:** on SQLite (fast, no server) and on PostgreSQL 16 as a
@@ -135,7 +138,7 @@ explain every line.
   `terminationGracePeriodSeconds`.
 - **Visible change:** the image tag is passed in as `APP_VERSION`, served at `/api/version`
   and shown in the UI footer.
-- **Measured:** `scripts/rollout_check.py` sends a request every ~100 ms during the change and
+- **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
   counts every non-200 or failed connection. Result on kind: rollout v1 to v4, 768 requests,
   0 failed; rollback v4 to v1, 405 requests, 0 failed.
 - **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in

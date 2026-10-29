@@ -1,6 +1,8 @@
 import time
+from http import HTTPStatus
 
-from fastapi import Request
+from fastapi import Request, Response
+from starlette.middleware.base import RequestResponseEndpoint
 
 from app import LATENCY, REQUESTS, log
 
@@ -15,9 +17,9 @@ def metric_path(request: Request) -> str:
     return request.url.path if "route" in request.scope else "other"
 
 
-async def observe_requests(request: Request, call_next):
+async def observe_requests(request: Request, call_next: RequestResponseEndpoint) -> Response:
     start = time.perf_counter()
-    status = 500  # stays 500 if the handler raises
+    status: int = HTTPStatus.INTERNAL_SERVER_ERROR  # stays 500 if the handler raises
     try:
         response = await call_next(request)
         status = response.status_code
