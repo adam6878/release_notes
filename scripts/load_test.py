@@ -11,7 +11,7 @@ import requests
 # The dev cluster. 127.0.0.1, not localhost: on Windows localhost tries IPv6 first and each
 # request waits ~2 s.
 DEFAULT_TARGET = "127.0.0.1:8080"
-NUM_OF_WORKERS = 20  # threads, not processes, so a slow request doesn't block the next one
+NUM_OF_WORKERS = 20
 DURATION_IN_SECONDS = 120
 
 
