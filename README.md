@@ -46,8 +46,8 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
   kernelCommandLine = cgroup_no_v1=all
   ```
   Current Kubernetes versions do not start on cgroup v1.
-- `kind`, `kubectl`, `helm`, `make`, `openssl`
-- `bash` on the PATH (on Windows: Git Bash). The Makefile runs its recipes with bash.
+- `kind`, `kubectl`, `helm`, `make`, `python`. The Makefile is written for Windows: its recipes
+  run in `cmd.exe`, so `make` works from cmd, PowerShell and Git Bash.
 
 ## Bring the stack up
 
@@ -96,29 +96,9 @@ sent: 768  succeeded: 768  failed: 0
 
 The UI footer shows the running version, so the change is also visible in the browser.
 
-### On Windows without a bash shell
-
-`make` needs bash (Git Bash). From PowerShell or cmd, run the same steps by hand. Start the
-load test first so traffic is already flowing when the pods change; its report prints about
-2 minutes later. In cmd, replace the first line with `start /b python scripts\load_test.py`.
-
-Rollout to `v2`:
-
-```powershell
-Start-Process python scripts/load_test.py -NoNewWindow
-docker build -t release-notes:v2 .
-kind load docker-image release-notes:v2 --name release-notes
-helm upgrade --install release-notes deploy -n dev -f deploy/values-dev.yaml --set image.repository=release-notes --set image.tag=v2 --wait --timeout 180s
-```
-
-Rollback (after the rollout's report has printed):
-
-```powershell
-Start-Process python scripts/load_test.py -NoNewWindow
-helm rollback release-notes -n dev --wait
-```
-
-Use a tag that is not deployed yet; redeploying the current tag replaces no pods.
+`make` does not wait for the load test: its report prints about 2 minutes after the command
+starts, so wait for it before the next one. Use a tag that is not deployed yet; redeploying the
+current tag replaces no pods.
 
 ## Run locally without Kubernetes
 

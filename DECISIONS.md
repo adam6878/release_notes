@@ -61,7 +61,7 @@ explain every line.
   set of templates with small per-environment values files, `helm lint` for CI, and
   `helm rollback` as the one-command way back.
 - **Secrets:** the chart only references a Secret by name. `make up` generates the database
-  password once with `openssl` and stores it only in the cluster. Non-secret settings
+  password once with Python's `secrets` and stores it only in the cluster. Non-secret settings
   (`LOG_LEVEL`) go in a ConfigMap; a checksum annotation rolls the pods when it changes.
   The Secret holds only the password; host, user and database name are plain chart values,
   and the Deployment assembles `DATABASE_URL` from them.
