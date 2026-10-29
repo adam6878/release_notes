@@ -2,16 +2,13 @@
 # make up overrides both fields with the locally built image.
 image:
   repository: ghcr.io/adam6878/release-notes
-  tag: ""
-
+  tag: "64eef0cffd4b3c4f95b4e0bb2ef18eb1259c97aa"
 config:
   logLevel: INFO
-
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 4
-
 resources:
   requests:
     cpu: 200m
@@ -19,6 +16,5 @@ resources:
   limits:
     cpu: "1"
     memory: 384Mi
-
 postgres:
   storage: 2Gi
