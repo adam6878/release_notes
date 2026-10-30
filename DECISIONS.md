@@ -40,10 +40,27 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **Prometheus pull model.** The app serves `/metrics`; pods carry the standard
   `prometheus.io/scrape` annotations. I did not deploy Prometheus: in a real cluster the
   platform runs it (with the Operator I would ship a `ServiceMonitor`).
+- **Counters live in memory, and a restart is not a problem.** A pod restart or rollout resets
+  its counters to zero. Prometheus stores the history, and when a counter value drops it treats
+  that as a reset, so `rate()` and `increase()` stay correct. The app needs no persistence.
 - **Bounded label values.** The `path` label is the real path only for matched API routes;
   everything else is `other`, so random URLs cannot create unlimited time series. This rule
   must switch to route templates once a route has path parameters.
+- **Failed requests log the server's message.** The request log gets an `error` field: the
+  `detail` of an `HTTPException` (409, 404) or `repr(exc)` of a crash (500). FastAPI turns an
+  `HTTPException` into a response before the middleware runs, so `main.py` has a handler that
+  saves the message, then returns the normal response. The level follows the status: 5xx is
+  ERROR, 4xx is WARNING, the rest INFO, because a caller's mistake is not a server fault.
+  Validation errors (422) are logged with the status only. A handler for `RequestValidationError`
+  would add the field and reason, but the browser form checks the version format before sending,
+  so UI users rarely reach a 422 and the handler would be unused code. Add it when clients that
+  call the API directly (a script, an SDK) appear, where the log is the only place to see why a
+  request was rejected. Leave the input value out of that message, so a long `notes` text is
+  never copied into the logs.
 - **JSON logs to stdout**, one line per request; probes and scrapes are counted, not logged.
+  Colour is added only when stdout is a terminal (`isatty`), because ANSI codes would break a
+  log collector's parser. `time` is local `dd/mm/yyyy hh:mm:ss` for readability; it has no
+  timezone, which is fine while pods run in UTC and a collector adds its own receive time.
 
 ## Container and Kubernetes
 - **Image:** multi-stage build on `python:3.15-slim`, numeric non-root user. The build stage

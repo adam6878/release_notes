@@ -6,7 +6,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 
-import requests
+import httpx2
 
 # The dev cluster. 127.0.0.1, not localhost: on Windows localhost tries IPv6 first and each
 # request waits ~2 s.
@@ -17,8 +17,8 @@ DURATION_IN_SECONDS = 120
 
 def get_version(url: str) -> str | None:
     try:
-        response = requests.get(url, timeout=2)
-    except requests.RequestException:
+        response = httpx2.get(url, timeout=2)
+    except httpx2.RequestError:
         return None
     if response.status_code != HTTPStatus.OK:
         return None

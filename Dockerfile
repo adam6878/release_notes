@@ -23,7 +23,5 @@ COPY run.py .
 USER 10001
 EXPOSE 8000
 
-# Exec form: python is PID 1, so SIGTERM goes straight to uvicorn, which finishes in-flight
-# requests before exiting.
 # ENTRYPOINT, not CMD: arguments passed to `docker run` or a pod's `args` cannot replace it.
 ENTRYPOINT ["python", "run.py"]

@@ -7,7 +7,6 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    Text,
     create_engine,
 )
 
@@ -24,6 +23,6 @@ releases = Table(
     Column("version", String(50), nullable=False, unique=True),
     Column("title", String(200), nullable=False),
     Column("author", String(100), nullable=False),
-    Column("notes", Text, nullable=False, default=""),
+    Column("notes", String(500), nullable=False, default=""),
     Column("created_at", DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)),
 )

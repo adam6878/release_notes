@@ -26,12 +26,16 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
 - **One image serves the API and the UI.** FastAPI serves `app/static/index.html` and the
   JSON API on the same origin, so there is no CORS and no separate frontend deployment.
 - **API:** `GET /api/releases` lists releases (newest first). `POST /api/releases` records
-  one (`version`, `title`, `author`, `notes`; `notes` is optional, max 10000 characters).
+  one (`version`, `title`, `author`, `notes`; `notes` is optional, max 500 characters).
+  `version` must be `X.Y.Z` with numbers only (`1.2.3`); anything else returns `422`.
   A duplicate version returns `409`.
 - **Operations endpoints** sit outside `/api`:
   `/healthz` (liveness, no DB call), `/readyz` (readiness, checks the DB),
   `/metrics` (Prometheus format: request count and latency by method, path and status).
-- **Logs** are JSON, one line per request, written to stdout.
+- **Logs** are JSON, one line per request, written to stdout. `time` is local time as
+  `dd/mm/yyyy hh:mm:ss`. A failed request adds an `error` field with the server's message;
+  the level is ERROR for 5xx, WARNING for 4xx, INFO otherwise. In a terminal the line is coloured (info bright blue, debug orange,
+  warning magenta, error red); in a pod it is plain JSON.
 - **Configuration** comes from environment variables (`DATABASE_URL`, `LOG_LEVEL`).
   In the cluster, non-secret values come from a ConfigMap and the database password from a
   Secret that is generated at deploy time and never stored in git.

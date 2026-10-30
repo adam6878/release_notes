@@ -48,7 +48,7 @@ def test_unknown_urls_do_not_create_new_metric_labels(client: TestClient) -> Non
 
 def test_requests_are_logged_but_probes_are_not(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     logged: list[dict[str, Any]] = []
-    monkeypatch.setattr("app.middleware.log.info", lambda msg, extra: logged.append(extra["fields"]))
+    monkeypatch.setattr("app.middleware.log.log", lambda level, msg, extra: logged.append(extra["fields"]))
 
     client.get("/healthz")
     client.get("/readyz")
