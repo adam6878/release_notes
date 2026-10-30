@@ -15,7 +15,6 @@ make up | rollout TAG=vN | rollback | down | clean
 
 ## Rules
 - Keep it simple. No new files, dependencies or abstractions unless the task needs them.
-  The owner must be able to explain every line.
 - Every function parameter and return value is annotated (mypy strict). Use builtin generics
   (`dict[str, str]`) and `http.HTTPStatus`, not numeric status codes.
 - Python 3.15 is pinned in the Dockerfile, `.github/workflows/ci.yml` and `mypy.ini`.

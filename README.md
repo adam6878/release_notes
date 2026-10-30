@@ -26,7 +26,8 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
 - **One image serves the API and the UI.** FastAPI serves `app/static/index.html` and the
   JSON API on the same origin, so there is no CORS and no separate frontend deployment.
 - **API:** `GET /api/releases` lists releases (newest first). `POST /api/releases` records
-  one (`version`, `title`, `author`, `notes`). A duplicate version returns `409`.
+  one (`version`, `title`, `author`, `notes`; `notes` is optional, max 10000 characters).
+  A duplicate version returns `409`.
 - **Operations endpoints** sit outside `/api`:
   `/healthz` (liveness, no DB call), `/readyz` (readiness, checks the DB),
   `/metrics` (Prometheus format: request count and latency by method, path and status).

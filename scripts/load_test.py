@@ -15,8 +15,7 @@ NUM_OF_WORKERS = 20
 DURATION_IN_SECONDS = 120
 
 
-def request_version(url: str) -> str | None:
-    """Return the version that answered, or None if the request failed."""
+def get_version(url: str) -> str | None:
     try:
         response = requests.get(url, timeout=2)
     except requests.RequestException:
@@ -32,7 +31,7 @@ def send_traffic(url: str) -> list[str | None]:
         futures = []
         end = time.monotonic() + DURATION_IN_SECONDS
         while time.monotonic() < end:
-            futures.append(pool.submit(request_version, url))
+            futures.append(pool.submit(get_version, url))
             time.sleep(0.1)
         return [future.result() for future in futures]
 

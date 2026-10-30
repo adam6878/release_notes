@@ -3,7 +3,7 @@ SHELL := cmd.exe
 # Override on the command line, e.g. make up ENV=prod, make rollout TAG=v2.
 ENV    ?= dev
 TAG    ?= $(shell git rev-parse --short HEAD)
-# host:port of the env's NodePort on this machine (kind.yaml); the load test sends traffic there.
+
 ifeq ($(ENV),prod)
 TARGET ?= 127.0.0.1:8081
 else
@@ -45,10 +45,7 @@ secret:
 
 deploy:
 	helm upgrade --install $(RELEASE) $(CHART) -n $(ENV) -f $(CHART)/values-$(ENV).yaml --set image.repository=$(IMAGE) --set image.tag=$(TAG) --wait --timeout 180s
-
-# rollout and rollback change the pods in the background (start /b) and run the load test in the
-# foreground, so make waits for its report and the prompt comes back right after it.
-# start is a cmd built-in that make cannot run directly, hence cmd /c.
+	
 
 # Zero-downtime check: build and roll out TAG under steady traffic; expect 0 failed.
 rollout:
