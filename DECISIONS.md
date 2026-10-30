@@ -182,9 +182,27 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **Database schema changes.** Old and new pods run at the same time, so a migration that
   drops or renames a column breaks the old pods. Use expand/contract migrations, run as a Job
   before the rollout. Today's `create_all` on startup cannot do that.
-- **The single PostgreSQL replica.** Any change to its spec restarts it, which is downtime for
-  every pod. Use a managed or replicated database outside the app release; also, `helm rollback`
-  reverts the database spec together with the app.
+- **The single PostgreSQL replica is a single point of failure.** Every app pod depends on the
+  one Postgres pod, so if it stops, the whole service is down. That happens on a crash, a node
+  drain, or any change to its spec, since a StatefulSet restarts its pod. The data sits on one
+  volume with no backups, so losing the disk loses the data. Also, `helm rollback` reverts the
+  database spec together with the app. The app side is already ready for a database blip:
+  `pool_pre_ping` drops dead connections, and readiness removes the pods until it is back.
+  Ways around it, from least to most work:
+  - **Backups with point-in-time recovery.** Does not stop the outage, but turns data loss into
+    a restore. Do this first.
+  - **A managed database** (RDS, Cloud SQL) with a standby in another zone, automatic failover
+    and backups. The least work to run, and what a real rollout should use.
+  - **A replicated Postgres in the cluster through an operator** (CloudNativePG, or Patroni
+    based ones): one primary, one or more standbys, automatic failover, backups to object
+    storage. Moves the database out of the app release, so `helm rollback` stops touching it.
+  - **A distributed SQL database** (CockroachDB, YugabyteDB) removes the single writer, at the
+    cost of a different engine and more to operate. Not worth it for an internal tool.
+
+  The limit does not go away fully. Postgres has one primary that takes the writes, so a
+  failover still takes seconds to a minute, and open connections drop. The app must retry or
+  fail cleanly during that time. Standbys can serve reads, but this app is write-light and does
+  not need them.
 - **Load balancers outside the cluster.** A cloud load balancer or Ingress controller keeps its
   own connection pool; its deregistration delay or connection draining must match the
   `preStop` sleep, or the sleep must grow.
