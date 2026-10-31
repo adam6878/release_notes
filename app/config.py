@@ -13,9 +13,9 @@ class Settings(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    # Seconds uvicorn waits for in-flight requests on SIGTERM; must stay below the pod's
-    # terminationGracePeriodSeconds (30) minus the preStop sleep (5).
+
     graceful_shutdown_seconds: int = 20
+    
     reload: bool = False
 
 
