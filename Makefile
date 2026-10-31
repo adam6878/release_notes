@@ -44,7 +44,7 @@ deploy:
 	
 
 rollout:
-	cmd /c start /b $(MAKE) image deploy TAG=$(TAG)
+	cmd /c start /b $(MAKE) image deploy  ENV=$(ENV) TAG=$(TAG)
 	$(LOAD_TEST)
 
 rollback:

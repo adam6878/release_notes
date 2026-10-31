@@ -140,7 +140,7 @@ I used Claude Code while building this. `CLAUDE.md` holds the project rules the 
   is rebuilt from the build cache, so the second build takes seconds. It also checks that the
   triggering event was a push, so a pull request can never publish.
 - **GitOps over a direct deploy step.** CD never holds cluster credentials and never talks to a
-  cluster. A GitOps agent in the cluster (Argo CD or Flux) watches `main` and applies what it
+  cluster. ArgoCD that watches `main` and applies what it
   says, so git is the record of what runs in prod, drift is corrected, and a rollback is a
   `git revert` of the bump commit. The cost is a bot commit per release and a short delay until
   the agent syncs. The agent itself is not part of this repo; the local cluster is deployed with
@@ -186,28 +186,23 @@ I used Claude Code while building this. `CLAUDE.md` holds the project rules the 
   (5 + 20 = 25, with 5 s to spare), so uvicorn gives up before Kubernetes would kill it. Measured
   on kind: with the `preStop` hook removed, a restart under load failed 2 of 1196 requests; with
   it, every run failed 0.
-- **Measured, with a way back.** `scripts/load_test.py` sends a request every ~100 ms during the
-  change and counts every non-200 or failed connection. It goes through the Service's fixed
-  NodePort, mapped to a host port by `kind.yaml`; a `kubectl port-forward` tunnel is tied to one
-  pod and breaks when that pod is replaced, so it would measure the tunnel and not the app.
-  Result on kind: rollout 8fd5737 to v3, 1195 requests, 0 failed; rollback v3 to 8fd5737, 1196
-  requests, 0 failed. The image tag is passed in as `APP_VERSION`, served at `/api/version` and
-  shown in the UI footer, so the switch is visible. `make rollback` (`helm rollback --wait`) goes
-  back to the previous Helm revision; with GitOps in production the way back is a `git revert`
-  of the image bump.
+- **Measured, with a way back.** `scripts/load_test.py` sends a request every ~100 ms while the
+  pods are replaced and counts every request that fails or does not return 200. It sends them
+  through the Service's NodePort. Result on kind: a rollout sent 1195 requests and a rollback
+  sent 1196, with 0 failed in both. The image tag is shown at `/api/version` and in the UI
+  footer, so you can see which version answered. `make rollback` goes back to the previous Helm
+  revision; with GitOps in production, the way back is a `git revert` of the image bump.
 
 ### What would still break this in a real cluster
 - **Old and new versions run side by side.** During a rollout, old and new pods serve at the
   same time, so both must work with the same database and the same clients. A migration that
-  drops or renames a column breaks the old pods, and a browser holding the old UI can call the
-  new API. Today `create_all` on startup only creates missing tables and cannot alter one, and
+  drops or renames a column breaks the old pods. Today `create_all` on startup only creates missing tables and cannot alter one, and
   replicas starting together race (seen once on the first prod install). What I would do:
   - Run Alembic migrations as a Kubernetes Job before the new pods start (a Helm `pre-upgrade`
     hook, or a pipeline step). One process changes the schema, and a failed migration stops the
     rollout while the old pods keep serving.
   - Write migrations as expand/contract: release 1 adds the new column and the code writes both,
-    release 2 reads the new one, a later release drops the old one. API changes stay additive
-    for one release for the same reason.
+    release 2 reads the new one, a later release drops the old one.
 - **The database is the single point of failure.** One PostgreSQL pod serves every app pod, on
   one volume with no backups. It is down on a crash, a node drain, or any change to its spec, and
   the whole service goes with it: readiness takes every app pod out of rotation until it is
