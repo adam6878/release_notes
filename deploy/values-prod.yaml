@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/adam6878/release-notes
-  tag: "a921cdda436c5a7758aa0f9bc4021561a6f0b6f0"
+  tag: "0df9f93475c6298a327b71676a1f12cd57cc49e9"
 config:
   logLevel: INFO
 service:
