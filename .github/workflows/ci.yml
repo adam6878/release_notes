@@ -51,7 +51,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Tests on SQLite
         run: pytest
-      - name: Tests on PostgreSQL (the production engine)
+      - name: Tests on PostgreSQL
         run: pytest
         env:
           TEST_DATABASE_URL: postgresql+psycopg://release:test@localhost:5432/releases

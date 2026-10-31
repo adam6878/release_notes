@@ -1,8 +1,7 @@
 # Decisions
 
 ## AI assistance
-I used Claude Code (an AI assistant) while building this. I reviewed every change and can
-explain every line. `CLAUDE.md` holds the project rules the assistant follows.
+I used Claude Code (an AI assistant) while building this. `CLAUDE.md` holds the project rules the assistant follows.
 
 ## Assumptions
 - "Internal tool" means no authentication; it would sit behind the company SSO or VPN.
