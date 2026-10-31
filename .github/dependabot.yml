@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: {interval: weekly}
+    target-branch: develop
+    # One PR for all Python packages instead of one per package.
+    groups:
+      python: {patterns: ["*"]}
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    target-branch: develop

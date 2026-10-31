@@ -7,8 +7,8 @@ image:
 
 replicaCount: 2
 
+# type and nodePort are set per environment in values-dev.yaml and values-prod.yaml.
 service:
-  type: ClusterIP
   port: 80
 
 config:

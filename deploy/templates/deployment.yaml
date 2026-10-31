@@ -39,7 +39,6 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # Wait for Postgres so the app does not crash-loop while the database starts.
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
           command:

@@ -24,6 +24,21 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   classes and a `Session` would add a second definition of the data and a lifecycle to manage
   for nothing. I would move to the ORM when a related table appears.
 - **PostgreSQL in the cluster, SQLite locally**, chosen by `DATABASE_URL`.
+  - **Why PostgreSQL in the cluster:** the data is one relational table with a unique constraint,
+    and several replicas write to it at once. That needs a database server with real concurrent
+    writes and constraints enforced in one shared place. SQLite is a file inside one pod's disk:
+    each replica would get its own copy of the data, and it allows one writer at a time. PostgreSQL
+    is also the common default on Kubernetes, with an official image, operators, and a managed
+    service on every cloud, so the later move to a managed database changes only `DATABASE_URL`.
+  - **Why SQLite locally and in the fast test run:** no server to install or start, so
+    `python run.py` and `pytest` work on a clean machine, and each test run gets a throwaway file.
+    SQLite is not the production engine, so CI runs the same suite a second time on PostgreSQL 16.
+  - **Why not the others:** MySQL or MariaDB would work as well, but nothing here needs them and
+    PostgreSQL has the wider operator and managed-service support. A document database (MongoDB)
+    has no benefit for one fixed table with a fixed shape, and SQLAlchemy does not support it, so
+    the data layer would be rewritten. Redis is a cache, not a durable primary store. SQLAlchemy
+    Core keeps the queries portable across relational engines, so that choice can change without
+    rewriting the app.
 - **Tables are created on startup** (`create_all`). This is a shortcut: replicas starting
   together can race. Seen once on the first prod install: both pods created the tables on the
   empty database at the same time, one failed and Kubernetes restarted it, and it came up on
@@ -40,15 +55,34 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **Prometheus pull model.** The app serves `/metrics`; pods carry the standard
   `prometheus.io/scrape` annotations. I did not deploy Prometheus: in a real cluster the
   platform runs it (with the Operator I would ship a `ServiceMonitor`).
+- **Counters live in memory, and a restart is not a problem.** A pod restart or rollout resets
+  its counters to zero. Prometheus stores the history, and when a counter value drops it treats
+  that as a reset, so `rate()` and `increase()` stay correct. The app needs no persistence.
 - **Bounded label values.** The `path` label is the real path only for matched API routes;
   everything else is `other`, so random URLs cannot create unlimited time series. This rule
   must switch to route templates once a route has path parameters.
+- **Failed requests log the server's message.** The request log gets an `error` field: the
+  `detail` of an `HTTPException` (409, 404) or `repr(exc)` of a crash (500). FastAPI turns an
+  `HTTPException` into a response before the middleware runs, so `main.py` has a handler that
+  saves the message, then returns the normal response. The level follows the status: 5xx is
+  ERROR, 4xx is WARNING, the rest INFO, because a caller's mistake is not a server fault.
+  Validation errors (422) are logged with the status only. A handler for `RequestValidationError`
+  would add the field and reason, but the browser form checks the version format before sending,
+  so UI users rarely reach a 422 and the handler would be unused code. Add it when clients that
+  call the API directly (a script, an SDK) appear, where the log is the only place to see why a
+  request was rejected. Leave the input value out of that message, so a long `notes` text is
+  never copied into the logs.
 - **JSON logs to stdout**, one line per request; probes and scrapes are counted, not logged.
+  Colour is added only when stdout is a terminal (`isatty`), because ANSI codes would break a
+  log collector's parser. `time` is local `dd/mm/yyyy hh:mm:ss` for readability; it has no
+  timezone, which is fine while pods run in UTC and a collector adds its own receive time.
 
 ## Container and Kubernetes
-- **Image:** multi-stage build on `python:3.11-slim`, numeric non-root user. The build stage
+- **Image:** multi-stage build on `python:3.15-slim`, numeric non-root user. The build stage
   keeps the pip cache and build leftovers out of the final image. `.dockerignore` keeps `.env`
-  and git history out.
+  and git history out. pip is removed from the final image: the app never runs it, and its
+  bundled urllib3, msgpack and setuptools were the only fixable HIGH CVEs. The rest are Debian
+  packages with no fix released yet; the floating `3.15-slim` tag picks fixes up on the next build.
 - **`ENTRYPOINT ["python", "run.py"]`.** `run.py` calls `uvicorn.run` with host, port and
   shutdown timeout from the same pydantic settings as the rest of the app, so every setting
   is an environment variable and the Dockerfile holds no server flags. Exec form makes python
@@ -129,6 +163,11 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
     destination: {server: https://kubernetes.default.svc, namespace: prod}
     syncPolicy: {automated: {prune: true, selfHeal: true}}
   ```
+- **Exact pins, updated by Dependabot** (`.github/dependabot.yml`). `==` pins make the laptop,
+  CI and the image install the same code. Every week Dependabot opens PRs against `develop` for
+  pip packages (one grouped PR) and GitHub Actions, and CI tests each one before merge. The
+  Python base image is bumped by hand, because the Dockerfile, `ci.yml` and `mypy.ini` change
+  together. Only top-level packages are pinned; their dependencies still float.
 - **Known limits:** the bump commit needs `main` to accept pushes from `github-actions[bot]`
   (with branch protection, a bot pull request instead). Actions are pinned to major versions;
   in production I would pin them to commit SHAs.
@@ -147,7 +186,10 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   and shown in the UI footer.
 - **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
   counts every non-200 or failed connection. Result on kind: rollout 8fd5737 to v3, 1195
-  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed.
+  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed. The target is a
+  `host:port` argument. Dev and prod each get a fixed NodePort mapped to a host port by
+  `kind.yaml`, so traffic goes through the Service: a `kubectl port-forward` tunnel is pinned to
+  one pod and breaks when that pod is replaced.
 - **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in
   production, the way back is a `git revert` of the image bump.
 
@@ -155,9 +197,45 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **Database schema changes.** Old and new pods run at the same time, so a migration that
   drops or renames a column breaks the old pods. Use expand/contract migrations, run as a Job
   before the rollout. Today's `create_all` on startup cannot do that.
-- **The single PostgreSQL replica.** Any change to its spec restarts it, which is downtime for
-  every pod. Use a managed or replicated database outside the app release; also, `helm rollback`
-  reverts the database spec together with the app.
+- **The single PostgreSQL replica is a single point of failure.** Every app pod depends on the
+  one Postgres pod, so if it stops, the whole service is down. That happens on a crash, a node
+  drain, or any change to its spec, since a StatefulSet restarts its pod. The data sits on one
+  volume with no backups, so losing the disk loses the data. Also, `helm rollback` reverts the
+  database spec together with the app. The app side is already ready for a database blip:
+  `pool_pre_ping` drops dead connections, and readiness removes the pods until it is back.
+  Ways around it, from least to most work:
+  - **Backups with point-in-time recovery.** Does not stop the outage, but turns data loss into
+    a restore. Do this first.
+  - **A managed database** (RDS, Cloud SQL) with a standby in another zone, automatic failover
+    and backups. The least work to run, and what a real rollout should use.
+  - **A replicated Postgres in the cluster through an operator** (CloudNativePG, or Patroni
+    based ones): one primary, one or more standbys, automatic failover, backups to object
+    storage. Moves the database out of the app release, so `helm rollback` stops touching it.
+  - **A distributed SQL database** (CockroachDB, YugabyteDB) removes the single writer, at the
+    cost of a different engine and more to operate. Not worth it for an internal tool.
+
+  The limit does not go away fully. Postgres has one primary that takes the writes, so a
+  failover still takes seconds to a minute, and open connections drop. The app must retry or
+  fail cleanly during that time. Standbys can serve reads, but this app is write-light and does
+  not need them.
+- **Changing or upgrading the PostgreSQL server in production.** Not handled today, and the chart
+  makes it worse in two ways. Any change to the `postgres` spec restarts the single pod, which
+  is downtime. A major version bump (`postgres: image: postgres:16` to `17`) is worse: PostgreSQL
+  refuses to start on a data directory written by the older major version, so the pod
+  crash-loops until the data is migrated or the image is put back. What a real rollout would do:
+  - **Minor versions** (16.4 to 16.6): with a replicated setup, upgrade a standby first, fail
+    over to it, then upgrade the old primary. The outage is the failover time, seconds.
+  - **Major versions, or moving to another server** (including to a managed database): start the
+    new server beside the old one and copy the data with logical replication (or `pg_dump` and
+    restore for a small database like this one). Test the app against the new server. Then a short
+    window: stop writes, let the copy catch up, change `DATABASE_URL` in the Secret, and roll the
+    app pods. `pool_pre_ping` and readiness already handle the dropped connections. Keep the old
+    server, untouched, until the new one has been healthy for a while: it is the way back.
+  - **Never in the same release as an app change.** `helm rollback` reverts the database spec
+    together with the app, and cannot turn a major version upgrade back. Moving the database out
+    of the app release, as above, removes that coupling.
+  - **Take and test a backup first.** The upgrade is the moment data is most likely to be lost,
+    and there are no backups today (see "Cut for time").
 - **Load balancers outside the cluster.** A cloud load balancer or Ingress controller keeps its
   own connection pool; its deregistration delay or connection draining must match the
   `preStop` sleep, or the sleep must grow.
@@ -188,3 +266,15 @@ manager, authentication, image signing and vulnerability scanning.
 - **Schema changes** as expand/contract migrations run before the rollout, so old and new pods
   can share the database.
 - **Images from a registry**, signed, scanned in CI, and referenced by digest.
+- **Central logs with Logstash and Elasticsearch.** Today each pod's JSON goes to stdout and is
+  read with `kubectl logs`. With many pods and clusters that stops working. A shipper on each node
+  (Filebeat) would read the container logs and send them through Logstash, which parses and enriches
+  them, into Elasticsearch, searched in Kibana. The JSON format is what makes this cheap: no regex
+  parsing is needed. The colour output is already off in a pod, so the collector never sees escape
+  codes.
+- **A trace id on every request**, once the application grows past one deployment. The edge
+  generates an id (or accepts an incoming `traceparent` / `X-Request-ID` header), the request
+  middleware adds it to every log line as a `trace_id` field and to the response header, and each
+  service passes it on to the services it calls. One search in Elasticsearch then returns every
+  line a single request produced across all services. It is not built now: with one service and no
+  downstream calls, the id would only repeat what the request line already shows.

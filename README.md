@@ -7,8 +7,8 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
 ## Architecture
 
 ```
-            localhost:8080
-                  │  (kind port mapping → NodePort 30080, dev only)
+   localhost:8080 (dev), localhost:8081 (prod)
+                  │  (kind port mapping → NodePort 30080 / 30081)
                   ▼
         ┌──────────────────┐        ┌───────────────────────────┐
         │ Service          │        │ Deployment: release-notes │
@@ -26,11 +26,16 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
 - **One image serves the API and the UI.** FastAPI serves `app/static/index.html` and the
   JSON API on the same origin, so there is no CORS and no separate frontend deployment.
 - **API:** `GET /api/releases` lists releases (newest first). `POST /api/releases` records
-  one (`version`, `title`, `author`, `notes`). A duplicate version returns `409`.
+  one (`version`, `title`, `author`, `notes`; `notes` is optional, max 500 characters).
+  `version` must be `X.Y.Z` with numbers only (`1.2.3`); anything else returns `422`.
+  A duplicate version returns `409`.
 - **Operations endpoints** sit outside `/api`:
   `/healthz` (liveness, no DB call), `/readyz` (readiness, checks the DB),
   `/metrics` (Prometheus format: request count and latency by method, path and status).
-- **Logs** are JSON, one line per request, written to stdout.
+- **Logs** are JSON, one line per request, written to stdout. `time` is local time as
+  `dd/mm/yyyy hh:mm:ss`. A failed request adds an `error` field with the server's message;
+  the level is ERROR for 5xx, WARNING for 4xx, INFO otherwise. In a terminal the line is coloured (info bright blue, debug orange,
+  warning magenta, error red); in a pod it is plain JSON.
 - **Configuration** comes from environment variables (`DATABASE_URL`, `LOG_LEVEL`).
   In the cluster, non-secret values come from a ConfigMap and the database password from a
   Secret that is generated at deploy time and never stored in git.
@@ -46,7 +51,7 @@ container image and deployed to a local Kubernetes cluster (kind) with a Helm ch
   kernelCommandLine = cgroup_no_v1=all
   ```
   Current Kubernetes versions do not start on cgroup v1.
-- `kind`, `kubectl`, `helm`, `make`, `python`. The Makefile is written for Windows: its recipes
+- `kind`, `kubectl`, `helm`, `make`, Python 3.15. The Makefile is written for Windows: its recipes
   run in `cmd.exe`, so `make` works from cmd, PowerShell and Git Bash.
 
 ## Bring the stack up
@@ -68,7 +73,7 @@ Other commands:
 
 | Command | What it does |
 |---|---|
-| `make up ENV=prod` | Installs the prod settings into namespace `prod` (HPA on, ClusterIP service). Reach it with `kubectl -n prod port-forward svc/release-notes 8081:80`. |
+| `make up ENV=prod` | Installs the prod settings into namespace `prod` (HPA on). Open **http://localhost:8081**. |
 | `make down` | Uninstalls the release and deletes the namespace **and its database volume**. |
 | `make clean` | Deletes the whole kind cluster. |
 
@@ -86,7 +91,9 @@ make rollback         # back to the previous Helm revision, measured the same wa
 Both change the pods in the background while `scripts/load_test.py` runs in the foreground. The
 load test (needs `pip install -r requirements-dev.txt`) sends a request to `/api/version` every
 ~100 ms for 2 minutes and prints a report. It knows nothing
-about Helm, so it can also run on its own: `python scripts/load_test.py`.
+about Helm, so it can also run on its own: `python scripts/load_test.py [host:port]` (default
+`127.0.0.1:8080`, the dev cluster). `make rollout ENV=prod` targets prod at `127.0.0.1:8081`;
+`TARGET=host:port` overrides the address.
 
 ```
 8fd5737: 767 succeeded
@@ -114,6 +121,7 @@ Then open http://127.0.0.1:8000 (API docs at `/docs`).
 ## Tests
 
 ```
+set PYYAML_FORCE_LIBYAML=0       # Windows: PyYAML (pre-commit) has no 3.15 wheel yet; build it pure-Python
 pip install -r requirements-dev.txt
 pytest
 ruff check .
@@ -175,6 +183,7 @@ app/                 FastAPI service
 tests/               pytest suite (API, health, metrics, logging)
 deploy/              Helm chart (values.yaml, values-dev.yaml, values-prod.yaml, templates/)
 .github/workflows/   CI/CD pipeline
+.github/dependabot.yml  weekly PRs that bump pinned versions
 requirements-dev.txt test, lint and type-check dependencies (kept out of the image)
 mypy.ini             strict type-check settings
 run.py               entrypoint: starts uvicorn with settings from config.py
@@ -193,4 +202,4 @@ CLAUDE.md            project rules for the AI coding assistant
   (`docker info --format '{{.CgroupVersion}}'` must print `2`), then `make clean && make up`.
 - **Slow first start:** `kind.yaml` already gives kubeadm 5 minutes. Giving Docker more CPUs
   (`processors=` in `.wslconfig`) shortens it.
-- **Port 8080 already in use:** change `hostPort` in `kind.yaml`, then `make clean && make up`.
+- **Port 8080 or 8081 already in use:** change `hostPort` in `kind.yaml`, then `make clean && make up`.

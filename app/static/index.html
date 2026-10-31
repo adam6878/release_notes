@@ -19,7 +19,7 @@
   textarea { height: 100px; }
   button { padding: 10px 18px; background: #0b6bff; color: #fff; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
   #error { color: #ff4d4f; font-size: 14px; margin: 0 0 12px; }
-  .rel { padding: 10px 0; border-top: 1px solid #2a2f38; }
+  .rel { padding: 10px 0; border-top: 1px solid #2a2f38; overflow-wrap: anywhere; }
   .rel:first-child { border-top: 0; }
   .meta { color: #8b93a0; font-size: 13px; }
   .notes { white-space: pre-wrap; margin: 6px 0 0; }
@@ -33,11 +33,11 @@
     <h2>Record a release</h2>
     <form id="form">
       <div class="row">
-        <label>Version <input name="version" required maxlength="50"></label>
+        <label>Version <input name="version" required maxlength="50" pattern="\d+\.\d+\.\d+" title="Use X.Y.Z, for example 1.2.3"></label>
         <label>Title <input name="title" required maxlength="200"></label>
       </div>
       <label>Author <input name="author" required maxlength="100"></label>
-      <label>Notes <textarea name="notes"></textarea></label>
+      <label>Notes <textarea name="notes" maxlength="500"></textarea></label>
       <p id="error" hidden></p>
       <button>Save release</button>
     </form>
@@ -53,14 +53,17 @@
   const error = document.getElementById("error");
   const history = document.getElementById("history");
 
-  // Relative URLs: UI and API share one origin (same pod/Service), so no CORS or per-env config.
   async function api(method, body) {
     const res = await fetch("/api/releases", {
       method,
       headers: { "Content-Type": "application/json" },
       body: body && JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const { detail } = await res.json().catch(() => ({}));
+      const message = Array.isArray(detail) ? detail.map(d => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : detail;
+      throw new Error(message || `HTTP ${res.status}`);
+    }
     return res.json();
   }
 

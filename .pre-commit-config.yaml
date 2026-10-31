@@ -1,6 +1,3 @@
-# Runs on every git commit after `pre-commit install`: the same checks as CI's lint, test and chart jobs.
-# language: system uses the tools from requirements-dev.txt (activate venv first),
-# so every version is pinned in one place.
 repos:
   - repo: local
     hooks:
