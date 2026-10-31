@@ -172,81 +172,76 @@ I used Claude Code (an AI assistant) while building this. `CLAUDE.md` holds the 
   in production I would pin them to commit SHAs.
 
 ## Zero-downtime rollout
-- **Gradual rollout:** `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, so an old
-  pod is removed only after its replacement passes readiness; `minReadySeconds: 5` makes the
-  new pod prove itself before the next step.
-- **Graceful shutdown:** when a pod is deleted, removing it from the Service and sending it
-  SIGTERM happen in parallel, and the routing change takes a moment to reach every node. A
-  `preStop` sleep of 5 s keeps the pod serving through that window; then uvicorn gets SIGTERM
-  and finishes in-flight requests (`GRACEFUL_SHUTDOWN_SECONDS`, 20 s), inside a 30 s
-  `terminationGracePeriodSeconds`. Measured on kind: with the `preStop` hook removed, a restart
-  under load failed 2 of 1196 requests; with it, every run failed 0.
-- **Visible change:** the image tag is passed in as `APP_VERSION`, served at `/api/version`
-  and shown in the UI footer.
-- **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
-  counts every non-200 or failed connection. Result on kind: rollout 8fd5737 to v3, 1195
-  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed. The target is a
-  `host:port` argument. Dev and prod each get a fixed NodePort mapped to a host port by
-  `kind.yaml`, so traffic goes through the Service: a `kubectl port-forward` tunnel is pinned to
-  one pod and breaks when that pod is replaced.
-- **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in
-  production, the way back is a `git revert` of the image bump.
+- **Gradual rollout, so capacity never drops.** `RollingUpdate` with `maxSurge: 1` and
+  `maxUnavailable: 0`: with 2 replicas the rollout starts a third pod, and an old pod is removed
+  only after its replacement has passed readiness and stayed Ready for `minReadySeconds: 5`. The
+  number of Ready pods never falls below 2. The values are written out because the defaults (25%)
+  round to the same numbers at 2 replicas, but allow one unavailable pod at the 4 replicas the
+  HPA reaches in prod.
+- **Graceful shutdown, so no request is cut off.** When a pod is deleted, removing it from the
+  Service and sending it SIGTERM happen in parallel, and the routing change takes a moment to
+  reach every node. A `preStop` sleep of 5 s keeps the pod serving through that window. Then
+  uvicorn gets SIGTERM, stops accepting connections, and finishes in-flight requests for at most
+  `GRACEFUL_SHUTDOWN_SECONDS` (20 s). Both share one `terminationGracePeriodSeconds` of 30 s
+  (5 + 20 = 25, with 5 s to spare), so uvicorn gives up before Kubernetes would kill it. Measured
+  on kind: with the `preStop` hook removed, a restart under load failed 2 of 1196 requests; with
+  it, every run failed 0.
+- **Measured, with a way back.** `scripts/load_test.py` sends a request every ~100 ms during the
+  change and counts every non-200 or failed connection. It goes through the Service's fixed
+  NodePort, mapped to a host port by `kind.yaml`; a `kubectl port-forward` tunnel is tied to one
+  pod and breaks when that pod is replaced, so it would measure the tunnel and not the app.
+  Result on kind: rollout 8fd5737 to v3, 1195 requests, 0 failed; rollback v3 to 8fd5737, 1196
+  requests, 0 failed. The image tag is passed in as `APP_VERSION`, served at `/api/version` and
+  shown in the UI footer, so the switch is visible. `make rollback` (`helm rollback --wait`) goes
+  back to the previous Helm revision; with GitOps in production the way back is a `git revert`
+  of the image bump.
 
 ### What would still break this in a real cluster
-- **Database schema changes.** Old and new pods run at the same time, so a migration that
-  drops or renames a column breaks the old pods. Use expand/contract migrations, run as a Job
-  before the rollout. Today's `create_all` on startup cannot do that.
-- **The single PostgreSQL replica is a single point of failure.** Every app pod depends on the
-  one Postgres pod, so if it stops, the whole service is down. That happens on a crash, a node
-  drain, or any change to its spec, since a StatefulSet restarts its pod. The data sits on one
-  volume with no backups, so losing the disk loses the data. Also, `helm rollback` reverts the
-  database spec together with the app. The app side is already ready for a database blip:
-  `pool_pre_ping` drops dead connections, and readiness removes the pods until it is back.
-  Ways around it, from least to most work:
-  - **Backups with point-in-time recovery.** Does not stop the outage, but turns data loss into
-    a restore. Do this first.
-  - **A managed database** (RDS, Cloud SQL) with a standby in another zone, automatic failover
-    and backups. The least work to run, and what a real rollout should use.
-  - **A replicated Postgres in the cluster through an operator** (CloudNativePG, or Patroni
-    based ones): one primary, one or more standbys, automatic failover, backups to object
-    storage. Moves the database out of the app release, so `helm rollback` stops touching it.
-  - **A distributed SQL database** (CockroachDB, YugabyteDB) removes the single writer, at the
-    cost of a different engine and more to operate. Not worth it for an internal tool.
-
-  The limit does not go away fully. Postgres has one primary that takes the writes, so a
-  failover still takes seconds to a minute, and open connections drop. The app must retry or
-  fail cleanly during that time. Standbys can serve reads, but this app is write-light and does
-  not need them.
-- **Changing or upgrading the PostgreSQL server in production.** Not handled today, and the chart
-  makes it worse in two ways. Any change to the `postgres` spec restarts the single pod, which
-  is downtime. A major version bump (`postgres: image: postgres:16` to `17`) is worse: PostgreSQL
-  refuses to start on a data directory written by the older major version, so the pod
-  crash-loops until the data is migrated or the image is put back. What a real rollout would do:
-  - **Minor versions** (16.4 to 16.6): with a replicated setup, upgrade a standby first, fail
-    over to it, then upgrade the old primary. The outage is the failover time, seconds.
-  - **Major versions, or moving to another server** (including to a managed database): start the
-    new server beside the old one and copy the data with logical replication (or `pg_dump` and
-    restore for a small database like this one). Test the app against the new server. Then a short
-    window: stop writes, let the copy catch up, change `DATABASE_URL` in the Secret, and roll the
-    app pods. `pool_pre_ping` and readiness already handle the dropped connections. Keep the old
-    server, untouched, until the new one has been healthy for a while: it is the way back.
-  - **Never in the same release as an app change.** `helm rollback` reverts the database spec
-    together with the app, and cannot turn a major version upgrade back. Moving the database out
-    of the app release, as above, removes that coupling.
-  - **Take and test a backup first.** The upgrade is the moment data is most likely to be lost,
-    and there are no backups today (see "Cut for time").
-- **Load balancers outside the cluster.** A cloud load balancer or Ingress controller keeps its
-  own connection pool; its deregistration delay or connection draining must match the
-  `preStop` sleep, or the sleep must grow.
-- **Voluntary disruptions.** A node drain or cluster autoscaler can evict both replicas at once.
-  A PodDisruptionBudget (`minAvailable: 1`) prevents it.
-- **No room for the surge pod.** With a full node or a tight namespace quota, the extra pod
-  stays Pending and the rollout stalls. Capacity and quotas must leave room for `maxSurge`.
-- **Readiness depends on the database.** A short database blip removes every pod from rotation
-  at once: correct for errors, but a total outage for that time.
-- **Long-lived connections and slow requests** longer than the drain timeout are cut.
-- **Version skew.** A browser holding the old UI can call a new API. API changes must stay
-  additive across one release.
+- **Old and new versions run side by side.** During a rollout, old and new pods serve at the
+  same time, so both must work with the same database and the same clients. A migration that
+  drops or renames a column breaks the old pods, and a browser holding the old UI can call the
+  new API. Today `create_all` on startup only creates missing tables and cannot alter one, and
+  replicas starting together race (seen once on the first prod install). What I would do:
+  - Run Alembic migrations as a Kubernetes Job before the new pods start (a Helm `pre-upgrade`
+    hook, or a pipeline step). One process changes the schema, and a failed migration stops the
+    rollout while the old pods keep serving.
+  - Write migrations as expand/contract: release 1 adds the new column and the code writes both,
+    release 2 reads the new one, a later release drops the old one. API changes stay additive
+    for one release for the same reason.
+- **The database is the single point of failure.** One PostgreSQL pod serves every app pod, on
+  one volume with no backups. It is down on a crash, a node drain, or any change to its spec, and
+  the whole service goes with it: readiness takes every app pod out of rotation until it is
+  back, which is correct for errors but a full outage for that time. It is also tied to the app
+  release: `helm rollback` reverts the database spec together with the app, and a major version
+  bump (`postgres:16` to `17`) makes PostgreSQL refuse to start on the old data directory. The
+  app already copes with a short blip, since `pool_pre_ping` drops dead connections. What I would
+  do, in this order:
+  - Backups with point-in-time recovery first. They do not prevent an outage, but turn data
+    loss into a restore.
+  - A managed database (RDS, Cloud SQL) with a standby in another zone, automatic failover and
+    backups, or an operator (CloudNativePG) if it must stay in the cluster. Either one takes the
+    database out of the app release, so `helm rollback` stops touching it.
+  - Upgrades and moves to another server: start the new server beside the old one and copy the
+    data with logical replication (`pg_dump` and restore is enough for a database this small).
+    Then, in a short window, stop writes, let the copy catch up, change `DATABASE_URL` in the
+    Secret and roll the app pods. The old server stays untouched until the new one has been
+    healthy for a while: it is the way back. Never upgrade the database in the same release as
+    an app change.
+  - The limit does not go away: one primary takes the writes, so a failover still takes seconds
+    to a minute and open connections drop. The app must retry or fail cleanly meanwhile.
+- **Pods lost outside the rollout.** A node drain or the cluster autoscaler can evict both
+  replicas at once, and a full node or a tight namespace quota leaves the surge pod Pending, so
+  the rollout stalls. What I would do: a PodDisruptionBudget with `minAvailable: 1`, so drains
+  evict one pod at a time; `topologySpreadConstraints` so the replicas land on different nodes
+  and zones; and requests, node capacity and quotas that leave room for `maxSurge`.
+- **Traffic in front of the pods.** A cloud load balancer or Ingress controller keeps its own
+  connection pool and takes time to notice that a pod is going away. If its deregistration delay
+  is longer than the `preStop` sleep, it still sends requests to a pod that has stopped
+  listening. Requests and connections longer than the drain timeout (WebSockets, large downloads)
+  are cut when it ends. What I would do: set the load balancer's connection draining at or below
+  the `preStop` sleep, or raise the sleep if it cannot be lowered; for long connections, raise
+  `GRACEFUL_SHUTDOWN_SECONDS` and `terminationGracePeriodSeconds` together, or make clients
+  reconnect. This app's requests are short, so it needs neither today.
 
 ## Cut for time
 PodDisruptionBudget, NetworkPolicy, Ingress, database backups, Alembic migrations, a secret
@@ -255,7 +250,7 @@ manager, authentication, image signing and vulnerability scanning.
 ## For a real rollout across many clusters
 - **Infrastructure with Terraform:** one cluster per environment and region, a managed
   PostgreSQL in place of the in-cluster StatefulSet, networking and IAM.
-- **GitOps (Argo CD or Flux)** instead of `make up`: CI publishes the image and bumps the tag
+- **Argo CD** instead of `make up`: CI publishes the image and bumps the tag
   in a config repository; each cluster pulls its own desired state, and an
   ApplicationSet-style template avoids copying configuration per cluster.
 - **Secrets from a secret manager** (External Secrets Operator or Sealed Secrets), not
@@ -264,7 +259,9 @@ manager, authentication, image signing and vulnerability scanning.
   and latency from Prometheus, then widen.
 - **Schema changes** as expand/contract migrations run before the rollout, so old and new pods
   can share the database.
-- **Images from a registry**, signed, scanned in CI, and referenced by digest.
+- **Pulling images in a real cluster.** Images already go to GHCR from CD, but `make up` loads
+  them into kind and never pulls. A real cluster pulls from GHCR, and if the images are private
+  each namespace needs a pull credential (`imagePullSecrets`).
 - **Central logs with Logstash and Elasticsearch.** Today each pod's JSON goes to stdout and is
   read with `kubectl logs`. With many pods and clusters that stops working. A shipper on each node
   (Filebeat) would read the container logs and send them through Logstash, which parses and enriches
