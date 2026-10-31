@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/releases", tags=["releases"])
 
 
 @router.get("", response_model=list[ReleaseOut])
-def list_releases() -> list[dict[str, Any]]:
+def get_releases() -> list[dict[str, Any]]:
     with engine.connect() as conn:
         rows = conn.execute(select(releases).order_by(releases.c.created_at.desc(), releases.c.id.desc()))
         return [dict(r._mapping) for r in rows]

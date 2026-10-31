@@ -1,8 +1,7 @@
 # Decisions
 
 ## AI assistance
-I used Claude Code (an AI assistant) while building this. I reviewed every change and can
-explain every line. `CLAUDE.md` holds the project rules the assistant follows.
+I used Claude Code while building this. `CLAUDE.md` holds the project rules the assistant follows.
 
 ## Assumptions
 - "Internal tool" means no authentication; it would sit behind the company SSO or VPN.
@@ -24,6 +23,21 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   classes and a `Session` would add a second definition of the data and a lifecycle to manage
   for nothing. I would move to the ORM when a related table appears.
 - **PostgreSQL in the cluster, SQLite locally**, chosen by `DATABASE_URL`.
+  - **Why PostgreSQL in the cluster:** the data is one relational table with a unique constraint,
+    and several replicas write to it at once. That needs a database server with real concurrent
+    writes and constraints enforced in one shared place. SQLite is a file inside one pod's disk:
+    each replica would get its own copy of the data, and it allows one writer at a time. PostgreSQL
+    is also the common default on Kubernetes, with an official image, operators, and a managed
+    service on every cloud, so the later move to a managed database changes only `DATABASE_URL`.
+  - **Why SQLite locally and in the fast test run:** no server to install or start, so
+    `python run.py` and `pytest` work on a clean machine, and each test run gets a throwaway file.
+    SQLite is not the production engine, so CI runs the same suite a second time on PostgreSQL 16.
+  - **Why not the others:** MySQL or MariaDB would work as well, but nothing here needs them and
+    PostgreSQL has the wider operator and managed-service support. A document database (MongoDB)
+    has no benefit for one fixed table with a fixed shape, and SQLAlchemy does not support it, so
+    the data layer would be rewritten. Redis is a cache, not a durable primary store. SQLAlchemy
+    Core keeps the queries portable across relational engines, so that choice can change without
+    rewriting the app.
 - **Tables are created on startup** (`create_all`). This is a shortcut: replicas starting
   together can race. Seen once on the first prod install: both pods created the tables on the
   empty database at the same time, one failed and Kubernetes restarted it, and it came up on
@@ -40,15 +54,34 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
 - **Prometheus pull model.** The app serves `/metrics`; pods carry the standard
   `prometheus.io/scrape` annotations. I did not deploy Prometheus: in a real cluster the
   platform runs it (with the Operator I would ship a `ServiceMonitor`).
+- **Counters live in memory, and a restart is not a problem.** A pod restart or rollout resets
+  its counters to zero. Prometheus stores the history, and when a counter value drops it treats
+  that as a reset, so `rate()` and `increase()` stay correct. The app needs no persistence.
 - **Bounded label values.** The `path` label is the real path only for matched API routes;
   everything else is `other`, so random URLs cannot create unlimited time series. This rule
   must switch to route templates once a route has path parameters.
+- **Failed requests log the server's message.** The request log gets an `error` field: the
+  `detail` of an `HTTPException` (409, 404) or `repr(exc)` of a crash (500). FastAPI turns an
+  `HTTPException` into a response before the middleware runs, so `main.py` has a handler that
+  saves the message, then returns the normal response. The level follows the status: 5xx is
+  ERROR, 4xx is WARNING, the rest INFO, because a caller's mistake is not a server fault.
+  Validation errors (422) are logged with the status only. A handler for `RequestValidationError`
+  would add the field and reason, but the browser form checks the version format before sending,
+  so UI users rarely reach a 422 and the handler would be unused code. Add it when clients that
+  call the API directly (a script, an SDK) appear, where the log is the only place to see why a
+  request was rejected. Leave the input value out of that message, so a long `notes` text is
+  never copied into the logs.
 - **JSON logs to stdout**, one line per request; probes and scrapes are counted, not logged.
+  Colour is added only when stdout is a terminal (`isatty`), because ANSI codes would break a
+  log collector's parser. `time` is local `dd/mm/yyyy hh:mm:ss` for readability; it has no
+  timezone, which is fine while pods run in UTC and a collector adds its own receive time.
 
 ## Container and Kubernetes
-- **Image:** multi-stage build on `python:3.11-slim`, numeric non-root user. The build stage
+- **Image:** multi-stage build on `python:3.15-slim`, numeric non-root user. The build stage
   keeps the pip cache and build leftovers out of the final image. `.dockerignore` keeps `.env`
-  and git history out.
+  and git history out. pip is removed from the final image: the app never runs it, and its
+  bundled urllib3, msgpack and setuptools were the only fixable HIGH CVEs. The rest are Debian
+  packages with no fix released yet; the floating `3.15-slim` tag picks fixes up on the next build.
 - **`ENTRYPOINT ["python", "run.py"]`.** `run.py` calls `uvicorn.run` with host, port and
   shutdown timeout from the same pydantic settings as the rest of the app, so every setting
   is an environment variable and the Dockerfile holds no server flags. Exec form makes python
@@ -129,47 +162,86 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
     destination: {server: https://kubernetes.default.svc, namespace: prod}
     syncPolicy: {automated: {prune: true, selfHeal: true}}
   ```
+- **Exact pins, updated by Dependabot** (`.github/dependabot.yml`). `==` pins make the laptop,
+  CI and the image install the same code. Every week Dependabot opens PRs against `develop` for
+  pip packages (one grouped PR) and GitHub Actions, and CI tests each one before merge. The
+  Python base image is bumped by hand, because the Dockerfile, `ci.yml` and `mypy.ini` change
+  together. Only top-level packages are pinned; their dependencies still float.
 - **Known limits:** the bump commit needs `main` to accept pushes from `github-actions[bot]`
   (with branch protection, a bot pull request instead). Actions are pinned to major versions;
   in production I would pin them to commit SHAs.
 
 ## Zero-downtime rollout
-- **Gradual rollout:** `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, so an old
-  pod is removed only after its replacement passes readiness; `minReadySeconds: 5` makes the
-  new pod prove itself before the next step.
-- **Graceful shutdown:** when a pod is deleted, removing it from the Service and sending it
-  SIGTERM happen in parallel, and the routing change takes a moment to reach every node. A
-  `preStop` sleep of 5 s keeps the pod serving through that window; then uvicorn gets SIGTERM
-  and finishes in-flight requests (`GRACEFUL_SHUTDOWN_SECONDS`, 20 s), inside a 30 s
-  `terminationGracePeriodSeconds`. Measured on kind: with the `preStop` hook removed, a restart
-  under load failed 2 of 1196 requests; with it, every run failed 0.
-- **Visible change:** the image tag is passed in as `APP_VERSION`, served at `/api/version`
-  and shown in the UI footer.
-- **Measured:** `scripts/load_test.py` sends a request every ~100 ms during the change and
-  counts every non-200 or failed connection. Result on kind: rollout 8fd5737 to v3, 1195
-  requests, 0 failed; rollback v3 to 8fd5737, 1196 requests, 0 failed.
-- **Way back:** `make rollback` (`helm rollback --wait`, measured the same way). With GitOps in
-  production, the way back is a `git revert` of the image bump.
+- **Gradual rollout, so capacity never drops.** `RollingUpdate` with `maxSurge: 1` and
+  `maxUnavailable: 0`: with 2 replicas the rollout starts a third pod, and an old pod is removed
+  only after its replacement has passed readiness and stayed Ready for `minReadySeconds: 5`. The
+  number of Ready pods never falls below 2. The values are written out because the defaults (25%)
+  round to the same numbers at 2 replicas, but allow one unavailable pod at the 4 replicas the
+  HPA reaches in prod.
+- **Graceful shutdown, so no request is cut off.** When a pod is deleted, removing it from the
+  Service and sending it SIGTERM happen in parallel, and the routing change takes a moment to
+  reach every node. A `preStop` sleep of 5 s keeps the pod serving through that window. Then
+  uvicorn gets SIGTERM, stops accepting connections, and finishes in-flight requests for at most
+  `GRACEFUL_SHUTDOWN_SECONDS` (20 s). Both share one `terminationGracePeriodSeconds` of 30 s
+  (5 + 20 = 25, with 5 s to spare), so uvicorn gives up before Kubernetes would kill it. Measured
+  on kind: with the `preStop` hook removed, a restart under load failed 2 of 1196 requests; with
+  it, every run failed 0.
+- **Measured, with a way back.** `scripts/load_test.py` sends a request every ~100 ms during the
+  change and counts every non-200 or failed connection. It goes through the Service's fixed
+  NodePort, mapped to a host port by `kind.yaml`; a `kubectl port-forward` tunnel is tied to one
+  pod and breaks when that pod is replaced, so it would measure the tunnel and not the app.
+  Result on kind: rollout 8fd5737 to v3, 1195 requests, 0 failed; rollback v3 to 8fd5737, 1196
+  requests, 0 failed. The image tag is passed in as `APP_VERSION`, served at `/api/version` and
+  shown in the UI footer, so the switch is visible. `make rollback` (`helm rollback --wait`) goes
+  back to the previous Helm revision; with GitOps in production the way back is a `git revert`
+  of the image bump.
 
 ### What would still break this in a real cluster
-- **Database schema changes.** Old and new pods run at the same time, so a migration that
-  drops or renames a column breaks the old pods. Use expand/contract migrations, run as a Job
-  before the rollout. Today's `create_all` on startup cannot do that.
-- **The single PostgreSQL replica.** Any change to its spec restarts it, which is downtime for
-  every pod. Use a managed or replicated database outside the app release; also, `helm rollback`
-  reverts the database spec together with the app.
-- **Load balancers outside the cluster.** A cloud load balancer or Ingress controller keeps its
-  own connection pool; its deregistration delay or connection draining must match the
-  `preStop` sleep, or the sleep must grow.
-- **Voluntary disruptions.** A node drain or cluster autoscaler can evict both replicas at once.
-  A PodDisruptionBudget (`minAvailable: 1`) prevents it.
-- **No room for the surge pod.** With a full node or a tight namespace quota, the extra pod
-  stays Pending and the rollout stalls. Capacity and quotas must leave room for `maxSurge`.
-- **Readiness depends on the database.** A short database blip removes every pod from rotation
-  at once: correct for errors, but a total outage for that time.
-- **Long-lived connections and slow requests** longer than the drain timeout are cut.
-- **Version skew.** A browser holding the old UI can call a new API. API changes must stay
-  additive across one release.
+- **Old and new versions run side by side.** During a rollout, old and new pods serve at the
+  same time, so both must work with the same database and the same clients. A migration that
+  drops or renames a column breaks the old pods, and a browser holding the old UI can call the
+  new API. Today `create_all` on startup only creates missing tables and cannot alter one, and
+  replicas starting together race (seen once on the first prod install). What I would do:
+  - Run Alembic migrations as a Kubernetes Job before the new pods start (a Helm `pre-upgrade`
+    hook, or a pipeline step). One process changes the schema, and a failed migration stops the
+    rollout while the old pods keep serving.
+  - Write migrations as expand/contract: release 1 adds the new column and the code writes both,
+    release 2 reads the new one, a later release drops the old one. API changes stay additive
+    for one release for the same reason.
+- **The database is the single point of failure.** One PostgreSQL pod serves every app pod, on
+  one volume with no backups. It is down on a crash, a node drain, or any change to its spec, and
+  the whole service goes with it: readiness takes every app pod out of rotation until it is
+  back, which is correct for errors but a full outage for that time. It is also tied to the app
+  release: `helm rollback` reverts the database spec together with the app, and a major version
+  bump (`postgres:16` to `17`) makes PostgreSQL refuse to start on the old data directory. The
+  app already copes with a short blip, since `pool_pre_ping` drops dead connections. What I would
+  do, in this order:
+  - Backups with point-in-time recovery first. They do not prevent an outage, but turn data
+    loss into a restore.
+  - A managed database (RDS, Cloud SQL) with a standby in another zone, automatic failover and
+    backups, or an operator (CloudNativePG) if it must stay in the cluster. Either one takes the
+    database out of the app release, so `helm rollback` stops touching it.
+  - Upgrades and moves to another server: start the new server beside the old one and copy the
+    data with logical replication (`pg_dump` and restore is enough for a database this small).
+    Then, in a short window, stop writes, let the copy catch up, change `DATABASE_URL` in the
+    Secret and roll the app pods. The old server stays untouched until the new one has been
+    healthy for a while: it is the way back. Never upgrade the database in the same release as
+    an app change.
+  - The limit does not go away: one primary takes the writes, so a failover still takes seconds
+    to a minute and open connections drop. The app must retry or fail cleanly meanwhile.
+- **Pods lost outside the rollout.** A node drain or the cluster autoscaler can evict both
+  replicas at once, and a full node or a tight namespace quota leaves the surge pod Pending, so
+  the rollout stalls. What I would do: a PodDisruptionBudget with `minAvailable: 1`, so drains
+  evict one pod at a time; `topologySpreadConstraints` so the replicas land on different nodes
+  and zones; and requests, node capacity and quotas that leave room for `maxSurge`.
+- **Traffic in front of the pods.** A cloud load balancer or Ingress controller keeps its own
+  connection pool and takes time to notice that a pod is going away. If its deregistration delay
+  is longer than the `preStop` sleep, it still sends requests to a pod that has stopped
+  listening. Requests and connections longer than the drain timeout (WebSockets, large downloads)
+  are cut when it ends. What I would do: set the load balancer's connection draining at or below
+  the `preStop` sleep, or raise the sleep if it cannot be lowered; for long connections, raise
+  `GRACEFUL_SHUTDOWN_SECONDS` and `terminationGracePeriodSeconds` together, or make clients
+  reconnect. This app's requests are short, so it needs neither today.
 
 ## Cut for time
 PodDisruptionBudget, NetworkPolicy, Ingress, database backups, Alembic migrations, a secret
@@ -178,7 +250,7 @@ manager, authentication, image signing and vulnerability scanning.
 ## For a real rollout across many clusters
 - **Infrastructure with Terraform:** one cluster per environment and region, a managed
   PostgreSQL in place of the in-cluster StatefulSet, networking and IAM.
-- **GitOps (Argo CD or Flux)** instead of `make up`: CI publishes the image and bumps the tag
+- **Argo CD** instead of `make up`: CI publishes the image and bumps the tag
   in a config repository; each cluster pulls its own desired state, and an
   ApplicationSet-style template avoids copying configuration per cluster.
 - **Secrets from a secret manager** (External Secrets Operator or Sealed Secrets), not
@@ -187,4 +259,18 @@ manager, authentication, image signing and vulnerability scanning.
   and latency from Prometheus, then widen.
 - **Schema changes** as expand/contract migrations run before the rollout, so old and new pods
   can share the database.
-- **Images from a registry**, signed, scanned in CI, and referenced by digest.
+- **Pulling images in a real cluster.** Images already go to GHCR from CD, but `make up` loads
+  them into kind and never pulls. A real cluster pulls from GHCR, and if the images are private
+  each namespace needs a pull credential (`imagePullSecrets`).
+- **Central logs with Logstash and Elasticsearch.** Today each pod's JSON goes to stdout and is
+  read with `kubectl logs`. With many pods and clusters that stops working. A shipper on each node
+  (Filebeat) would read the container logs and send them through Logstash, which parses and enriches
+  them, into Elasticsearch, searched in Kibana. The JSON format is what makes this cheap: no regex
+  parsing is needed. The colour output is already off in a pod, so the collector never sees escape
+  codes.
+- **A trace id on every request**, once the application grows past one deployment. The edge
+  generates an id (or accepts an incoming `traceparent` / `X-Request-ID` header), the request
+  middleware adds it to every log line as a `trace_id` field and to the response header, and each
+  service passes it on to the services it calls. One search in Elasticsearch then returns every
+  line a single request produced across all services. It is not built now: with one service and no
+  downstream calls, the id would only repeat what the request line already shows.

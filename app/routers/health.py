@@ -11,13 +11,11 @@ router = APIRouter(tags=["health"])
 
 @router.get("/healthz")
 def healthz() -> dict[str, str]:
-    # Liveness: the process is up. No DB call, so a DB outage doesn't make k8s restart every pod.
     return {"status": "ok"}
 
 
 @router.get("/readyz")
 def readyz() -> dict[str, str]:
-    # Readiness: the pod can serve traffic. Fails while the DB is unreachable, so k8s stops routing here.
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))

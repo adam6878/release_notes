@@ -46,8 +46,12 @@ def test_notes_are_optional(client: TestClient) -> None:
 @pytest.mark.parametrize("invalid_input", [
     {"version": ""},
     {"version": "x" * 51},
+    {"version": "1.2"},
+    {"version": "v1.2.3"},
+    {"version": "1.2.3\n"},
     {"title": ""},
     {"author": "a" * 101},
+    {"notes": "n" * 501},
 ])
 def test_invalid_input_is_rejected_and_not_stored(client: TestClient, invalid_input: dict[str, str]) -> None:
     res = client.post("/api/releases", json=release(**invalid_input))
