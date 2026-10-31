@@ -1,5 +1,3 @@
-# Weekly PRs that bump the exact pins; CI tests each one before merge.
-# No docker entry: a Python bump changes the Dockerfile, ci.yml and mypy.ini together, by hand.
 version: 2
 updates:
   - package-ecosystem: pip

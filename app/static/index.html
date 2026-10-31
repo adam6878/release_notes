@@ -53,7 +53,6 @@
   const error = document.getElementById("error");
   const history = document.getElementById("history");
 
-  // Relative URLs: UI and API share one origin (same pod/Service), so no CORS or per-env config.
   async function api(method, body) {
     const res = await fetch("/api/releases", {
       method,
@@ -61,7 +60,6 @@
       body: body && JSON.stringify(body),
     });
     if (!res.ok) {
-      // FastAPI sends {"detail": text} or, for validation errors, {"detail": [{loc, msg}]}.
       const { detail } = await res.json().catch(() => ({}));
       const message = Array.isArray(detail) ? detail.map(d => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : detail;
       throw new Error(message || `HTTP ${res.status}`);

@@ -19,11 +19,10 @@ def test_readiness_is_ok_when_database_is_reachable(client: TestClient) -> None:
 
 
 def test_readiness_fails_when_database_is_unreachable(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A real connection failure: SQLite cannot open a file in a directory that does not exist.
     monkeypatch.setattr("app.routers.health.engine", create_engine("sqlite:///no-such-dir/x.db"))
 
     assert client.get("/readyz").status_code == HTTPStatus.SERVICE_UNAVAILABLE
-    assert client.get("/healthz").status_code == HTTPStatus.OK  # liveness must not depend on the database
+    assert client.get("/healthz").status_code == HTTPStatus.OK
 
 
 def test_metrics_count_requests_by_route_and_status(client: TestClient) -> None:

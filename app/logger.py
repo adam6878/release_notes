@@ -5,7 +5,7 @@ import time
 
 log = logging.getLogger("release_notes")
 
-# ANSI colour codes. Keys are cyan, values green, unless the field has its own colour.
+# ANSI colour codes
 LEVEL_COLORS = {"DEBUG": "38;5;208", "INFO": "38;5;39", "WARNING": "35", "ERROR": "31", "CRITICAL": "1;31"}
 FIELD_COLORS = {"time": "90", "msg": "1"}
 
@@ -15,11 +15,7 @@ def paint(text: str, code: str) -> str:
 
 
 class JsonFormatter(logging.Formatter):
-    """One JSON object per line, so a log collector can parse fields without regex.
-
-    With color=True (a terminal) the same line gets ANSI colours. Never use it for a collector.
-    """
-
+    
     def __init__(self, color: bool) -> None:
         super().__init__()
         self.color = color

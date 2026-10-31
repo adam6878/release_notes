@@ -1,6 +1,5 @@
 SHELL := cmd.exe
 
-# Override on the command line, e.g. make up ENV=prod, make rollout TAG=v2.
 ENV    ?= dev
 TAG    ?= $(shell git rev-parse --short HEAD)
 
@@ -19,7 +18,6 @@ LOAD_TEST := python scripts/load_test.py $(TARGET)
 
 .PHONY: up cluster metrics-server image secret deploy rollout rollback down clean
 
-# Clean machine to running stack. Every step is safe to re-run.
 up: cluster metrics-server image secret deploy
 	@echo Up. $(ENV) UI: http://$(TARGET)
 
@@ -37,8 +35,6 @@ image:
 	docker build -t $(IMAGE):$(TAG) .
 	kind load docker-image $(IMAGE):$(TAG) --name $(CLUSTER)
 
-# Creates the namespace, then the DB password: generated once, it lives only in the cluster Secret.
-# The leading @ stops make from printing that line, so the password never shows in the terminal.
 secret:
 	kubectl create namespace $(ENV) --dry-run=client -o yaml | kubectl apply -f -
 	@kubectl -n $(ENV) get secret release-notes-db >nul 2>&1 || kubectl -n $(ENV) create secret generic release-notes-db --from-literal=POSTGRES_PASSWORD=$(shell python -c "import secrets; print(secrets.token_hex(16))")
@@ -47,12 +43,10 @@ deploy:
 	helm upgrade --install $(RELEASE) $(CHART) -n $(ENV) -f $(CHART)/values-$(ENV).yaml --set image.repository=$(IMAGE) --set image.tag=$(TAG) --wait --timeout 180s
 	
 
-# Zero-downtime check: build and roll out TAG under steady traffic; expect 0 failed.
 rollout:
 	cmd /c start /b $(MAKE) image deploy TAG=$(TAG)
 	$(LOAD_TEST)
 
-# One-command way back to the previous Helm revision, measured the same way.
 rollback:
 	cmd /c start /b helm rollback $(RELEASE) -n $(ENV) --wait
 	$(LOAD_TEST)

@@ -1,7 +1,5 @@
 name: ci
 
-# Every push and pull request: lint, test, validate the chart, build the image.
-# Publishing happens in cd.yml, only after this workflow succeeds on main.
 on:
   push:
     branches: [main, develop, "feature/**"]

@@ -12,7 +12,6 @@ from sqlalchemy import (
 
 from app.config import settings
 
-# Postgres in k8s (postgresql+psycopg://...); SQLite for local dev and tests.
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 
 metadata = MetaData()

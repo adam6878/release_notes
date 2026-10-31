@@ -40,7 +40,6 @@ def main() -> None:
     target = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_TARGET
     results = send_traffic(f"http://{target}/api/version")
     failed = results.count(None)
-    # Counter keeps the order versions were first seen, so the old version prints first.
     for version, count in Counter(result for result in results if result).items():
         print(f"{version}: {count} succeeded")
     print(f"sent: {len(results)}  succeeded: {len(results) - failed}  failed: {failed}")

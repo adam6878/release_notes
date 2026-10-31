@@ -1,5 +1,4 @@
 {{- $db := printf "%s-postgres" .Release.Name }}
-# Headless Service: gives the StatefulSet's single pod a stable DNS name.
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,7 +14,6 @@ spec:
     - name: postgres
       port: 5432
 ---
-# ponytail: one replica, no backups or failover; use a managed database or an operator in production
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

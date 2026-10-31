@@ -25,8 +25,6 @@ app = FastAPI(title="Release Notes", lifespan=lifespan)
 app.middleware("http")(observe_requests)
 
 
-# FastAPI turns this error into a response before the middleware sees it, so the middleware
-# cannot read the message.
 @app.exception_handler(HTTPException)
 async def log_http_error(request: Request, exc: HTTPException) -> Response:
     request.state.error = exc.detail
@@ -38,5 +36,4 @@ app.include_router(metrics_router)
 app.include_router(releases_router)
 app.include_router(version_router)
 
-# Mount last: "/" would otherwise shadow the routes above.
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="ui")

@@ -1,7 +1,6 @@
 FROM python:3.15-slim AS builder
 WORKDIR /build
 COPY requirements.txt .
-# Installed into /install so the final stage copies only the packages, not the pip cache.
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
@@ -12,7 +11,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Numeric UID so Kubernetes can verify runAsNonRoot.
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
-# The app never runs pip; removing it drops the CVEs in its bundled urllib3, msgpack and setuptools.
 RUN pip uninstall --yes --root-user-action=ignore pip
 
 WORKDIR /srv
@@ -23,5 +21,4 @@ COPY run.py .
 USER 10001
 EXPOSE 8000
 
-# ENTRYPOINT, not CMD: arguments passed to `docker run` or a pod's `args` cannot replace it.
 ENTRYPOINT ["python", "run.py"]

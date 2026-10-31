@@ -1,15 +1,12 @@
 name: cd
 
-# After ci succeeds on a push to main: publish the image and point prod at it.
-# GitOps: CD never talks to a cluster. It commits the new image to values-prod.yaml,
-# and the cluster's GitOps agent ArgoCD applies whatever main says.
 on:
   workflow_run:
     workflows: [ci]
     types: [completed]
     branches: [main]
 
-# One run at a time, so two quick merges cannot race on values-prod.yaml.
+
 concurrency:
   group: cd
   cancel-in-progress: false
@@ -17,7 +14,6 @@ concurrency:
 permissions:
   contents: read
 
-# The tag is the commit ci tested, so an image always maps to its source.
 env:
   IMAGE: ghcr.io/adam6878/release-notes
   TAG: ${{ github.event.workflow_run.head_sha }}
@@ -31,7 +27,6 @@ jobs:
       contents: read
       packages: write
     steps:
-      # The commit ci tested, not whatever main points at by now.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -48,7 +43,7 @@ jobs:
           push: true
           cache-from: type=gha
 
-  update-deployment:
+  update-prod-values:
     needs: publish
     runs-on: ubuntu-latest
     permissions:

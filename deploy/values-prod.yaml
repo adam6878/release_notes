@@ -1,5 +1,3 @@
-# Written by CI on every merge to main (GitOps): the cluster's GitOps agent deploys this.
-# make up overrides both fields with the locally built image.
 image:
   repository: ghcr.io/adam6878/release-notes
   tag: ""

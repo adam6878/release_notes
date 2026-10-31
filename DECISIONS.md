@@ -24,6 +24,21 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   classes and a `Session` would add a second definition of the data and a lifecycle to manage
   for nothing. I would move to the ORM when a related table appears.
 - **PostgreSQL in the cluster, SQLite locally**, chosen by `DATABASE_URL`.
+  - **Why PostgreSQL in the cluster:** the data is one relational table with a unique constraint,
+    and several replicas write to it at once. That needs a database server with real concurrent
+    writes and constraints enforced in one shared place. SQLite is a file inside one pod's disk:
+    each replica would get its own copy of the data, and it allows one writer at a time. PostgreSQL
+    is also the common default on Kubernetes, with an official image, operators, and a managed
+    service on every cloud, so the later move to a managed database changes only `DATABASE_URL`.
+  - **Why SQLite locally and in the fast test run:** no server to install or start, so
+    `python run.py` and `pytest` work on a clean machine, and each test run gets a throwaway file.
+    SQLite is not the production engine, so CI runs the same suite a second time on PostgreSQL 16.
+  - **Why not the others:** MySQL or MariaDB would work as well, but nothing here needs them and
+    PostgreSQL has the wider operator and managed-service support. A document database (MongoDB)
+    has no benefit for one fixed table with a fixed shape, and SQLAlchemy does not support it, so
+    the data layer would be rewritten. Redis is a cache, not a durable primary store. SQLAlchemy
+    Core keeps the queries portable across relational engines, so that choice can change without
+    rewriting the app.
 - **Tables are created on startup** (`create_all`). This is a shortcut: replicas starting
   together can race. Seen once on the first prod install: both pods created the tables on the
   empty database at the same time, one failed and Kubernetes restarted it, and it came up on
@@ -203,6 +218,24 @@ explain every line. `CLAUDE.md` holds the project rules the assistant follows.
   failover still takes seconds to a minute, and open connections drop. The app must retry or
   fail cleanly during that time. Standbys can serve reads, but this app is write-light and does
   not need them.
+- **Changing or upgrading the PostgreSQL server in production.** Not handled today, and the chart
+  makes it worse in two ways. Any change to the `postgres` spec restarts the single pod, which
+  is downtime. A major version bump (`postgres: image: postgres:16` to `17`) is worse: PostgreSQL
+  refuses to start on a data directory written by the older major version, so the pod
+  crash-loops until the data is migrated or the image is put back. What a real rollout would do:
+  - **Minor versions** (16.4 to 16.6): with a replicated setup, upgrade a standby first, fail
+    over to it, then upgrade the old primary. The outage is the failover time, seconds.
+  - **Major versions, or moving to another server** (including to a managed database): start the
+    new server beside the old one and copy the data with logical replication (or `pg_dump` and
+    restore for a small database like this one). Test the app against the new server. Then a short
+    window: stop writes, let the copy catch up, change `DATABASE_URL` in the Secret, and roll the
+    app pods. `pool_pre_ping` and readiness already handle the dropped connections. Keep the old
+    server, untouched, until the new one has been healthy for a while: it is the way back.
+  - **Never in the same release as an app change.** `helm rollback` reverts the database spec
+    together with the app, and cannot turn a major version upgrade back. Moving the database out
+    of the app release, as above, removes that coupling.
+  - **Take and test a backup first.** The upgrade is the moment data is most likely to be lost,
+    and there are no backups today (see "Cut for time").
 - **Load balancers outside the cluster.** A cloud load balancer or Ingress controller keeps its
   own connection pool; its deregistration delay or connection draining must match the
   `preStop` sleep, or the sleep must grow.
@@ -233,3 +266,15 @@ manager, authentication, image signing and vulnerability scanning.
 - **Schema changes** as expand/contract migrations run before the rollout, so old and new pods
   can share the database.
 - **Images from a registry**, signed, scanned in CI, and referenced by digest.
+- **Central logs with Logstash and Elasticsearch.** Today each pod's JSON goes to stdout and is
+  read with `kubectl logs`. With many pods and clusters that stops working. A shipper on each node
+  (Filebeat) would read the container logs and send them through Logstash, which parses and enriches
+  them, into Elasticsearch, searched in Kibana. The JSON format is what makes this cheap: no regex
+  parsing is needed. The colour output is already off in a pod, so the collector never sees escape
+  codes.
+- **A trace id on every request**, once the application grows past one deployment. The edge
+  generates an id (or accepts an incoming `traceparent` / `X-Request-ID` header), the request
+  middleware adds it to every log line as a `trace_id` field and to the response header, and each
+  service passes it on to the services it calls. One search in Elasticsearch then returns every
+  line a single request produced across all services. It is not built now: with one service and no
+  downstream calls, the id would only repeat what the request line already shows.
